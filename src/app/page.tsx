@@ -1,31 +1,68 @@
 'use client'
 
+import React, { useEffect } from 'react'
+import { useAetherStore, type AppView } from '@/lib/aether-store'
+import { AppShell } from '@/components/aether/AppShell'
+import { Dashboard } from '@/components/aether/Dashboard'
+import { AskAether } from '@/components/aether/AskAether'
+import { Collections } from '@/components/aether/Collections'
+import { Memories } from '@/components/aether/Memories'
+import { Settings } from '@/components/aether/Settings'
+
+function ViewRouter() {
+  const currentView = useAetherStore((s) => s.currentView)
+
+  const views: Record<AppView, React.ReactNode> = {
+    dashboard: <Dashboard />,
+    ask: <AskAether />,
+    collections: <Collections />,
+    memories: <Memories />,
+    settings: <Settings />,
+  }
+
+  return <>{views[currentView] || <Dashboard />}</>
+}
+
+function DataLoader({ children }: { children: React.ReactNode }) {
+  const { setMemories, setCollections, setLoading } = useAetherStore()
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true)
+      try {
+        const [memoriesRes, collectionsRes] = await Promise.all([
+          fetch('/api/memories'),
+          fetch('/api/collections'),
+        ])
+
+        if (memoriesRes.ok) {
+          const memories = await memoriesRes.json()
+          setMemories(memories)
+        }
+
+        if (collectionsRes.ok) {
+          const collections = await collectionsRes.json()
+          setCollections(collections)
+        }
+      } catch (error) {
+        console.error('Failed to load data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [setMemories, setCollections, setLoading])
+
+  return <>{children}</>
+}
+
 export default function Home() {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      gap: '2rem',
-      padding: '1rem'
-    }}>
-      <div style={{
-        position: 'relative',
-        width: '6rem',
-        height: '6rem'
-      }}>
-        <img
-          src="/logo.svg"
-          alt="Z.ai Logo"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }}
-        />
-      </div>
-    </div>
+    <DataLoader>
+      <AppShell>
+        <ViewRouter />
+      </AppShell>
+    </DataLoader>
   )
 }
