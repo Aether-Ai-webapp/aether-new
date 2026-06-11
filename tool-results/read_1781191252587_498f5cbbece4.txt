@@ -1,0 +1,750 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React, { useMemo, useCallback, useState } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import { formatDistanceToNow } from 'date-fns'
+     6→     6→import {
+     7→     7→  BookOpen,
+     8→     8→  Search,
+     9→     9→  FileText,
+    10→    10→  LinkIcon,
+    11→    11→  ImageIcon,
+    12→    12→  Mic,
+    13→    13→  Heart,
+    14→    14→  ArrowLeft,
+    15→    15→  Pencil,
+    16→    16→  Trash2,
+    17→    17→  ExternalLink,
+    18→    18→  Plus,
+    19→    19→  Tag,
+    20→    20→  FolderOpen,
+    21→    21→  Loader2,
+    22→    22→  X,
+    23→    23→} from 'lucide-react'
+    24→    24→import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+    25→    25→import { Card, CardContent } from '@/components/ui/card'
+    26→    26→import { Badge } from '@/components/ui/badge'
+    27→    27→import { Button } from '@/components/ui/button'
+    28→    28→import { Input } from '@/components/ui/input'
+    29→    29→import { ScrollArea } from '@/components/ui/scroll-area'
+    30→    30→import { Separator } from '@/components/ui/separator'
+    31→    31→import {
+    32→    32→  AlertDialog,
+    33→    33→  AlertDialogAction,
+    34→    34→  AlertDialogCancel,
+    35→    35→  AlertDialogContent,
+    36→    36→  AlertDialogDescription,
+    37→    37→  AlertDialogFooter,
+    38→    38→  AlertDialogHeader,
+    39→    39→  AlertDialogTitle,
+    40→    40→} from '@/components/ui/alert-dialog'
+    41→    41→import { cn } from '@/lib/utils'
+    42→    42→
+    43→    43→// ─── Type config ────────────────────────────────────────────────────
+    44→    44→const typeConfig: Record<
+    45→    45→  MemoryType,
+    46→    46→  { label: string; icon: React.ElementType; color: string; bg: string; badgeBg: string }
+    47→    47→> = {
+    48→    48→  text: {
+    49→    49→    label: 'Note',
+    50→    50→    icon: FileText,
+    51→    51→    color: '#8B5CF6',
+    52→    52→    bg: 'bg-[#8B5CF6]/10',
+    53→    53→    badgeBg: 'bg-[#8B5CF6]/15 text-[#7C3AED]',
+    54→    54→  },
+    55→    55→  link: {
+    56→    56→    label: 'Link',
+    57→    57→    icon: LinkIcon,
+    58→    58→    color: '#22C55E',
+    59→    59→    bg: 'bg-[#22C55E]/10',
+    60→    60→    badgeBg: 'bg-[#22C55E]/15 text-[#16A34A]',
+    61→    61→  },
+    62→    62→  image: {
+    63→    63→    label: 'Image',
+    64→    64→    icon: ImageIcon,
+    65→    65→    color: '#3B82F6',
+    66→    66→    bg: 'bg-[#3B82F6]/10',
+    67→    67→    badgeBg: 'bg-[#3B82F6]/15 text-[#2563EB]',
+    68→    68→  },
+    69→    69→  voice: {
+    70→    70→    label: 'Voice',
+    71→    71→    icon: Mic,
+    72→    72→    color: '#EC4899',
+    73→    73→    bg: 'bg-[#EC4899]/10',
+    74→    74→    badgeBg: 'bg-[#EC4899]/15 text-[#DB2777]',
+    75→    75→  },
+    76→    76→}
+    77→    77→
+    78→    78→// ─── Filter pills config ────────────────────────────────────────────
+    79→    79→const filterOptions: {
+    80→    80→  type: MemoryType | 'all'
+    81→    81→  label: string
+    82→    82→  icon: React.ElementType
+    83→    83→}[] = [
+    84→    84→  { type: 'all', label: 'All', icon: BookOpen },
+    85→    85→  { type: 'text', label: 'Notes', icon: FileText },
+    86→    86→  { type: 'link', label: 'Links', icon: LinkIcon },
+    87→    87→  { type: 'image', label: 'Images', icon: ImageIcon },
+    88→    88→  { type: 'voice', label: 'Voice', icon: Mic },
+    89→    89→]
+    90→    90→
+    91→    91→// ─── Animation variants ─────────────────────────────────────────────
+    92→    92→const containerVariants = {
+    93→    93→  hidden: { opacity: 0 },
+    94→    94→  visible: {
+    95→    95→    opacity: 1,
+    96→    96→    transition: { staggerChildren: 0.04 },
+    97→    97→  },
+    98→    98→}
+    99→    99→
+   100→   100→const itemVariants = {
+   101→   101→  hidden: { opacity: 0, y: 10 },
+   102→   102→  visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
+   103→   103→}
+   104→   104→
+   105→   105→const detailVariants = {
+   106→   106→  hidden: { opacity: 0, x: 20 },
+   107→   107→  visible: { opacity: 1, x: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+   108→   108→  exit: { opacity: 0, x: -20, transition: { duration: 0.2, ease: 'easeIn' } },
+   109→   109→}
+   110→   110→
+   111→   111→// ─── Memory Card ────────────────────────────────────────────────────
+   112→   112→function MemoryCard({
+   113→   113→  memory,
+   114→   114→  onClick,
+   115→   115→  onToggleFavorite,
+   116→   116→}: {
+   117→   117→  memory: Memory
+   118→   118→  onClick: () => void
+   119→   119→  onToggleFavorite: () => void
+   120→   120→}) {
+   121→   121→  const config = typeConfig[memory.type]
+   122→   122→  const TypeIcon = config.icon
+   123→   123→  const displayTitle =
+   124→   124→    memory.title || memory.content.split('\n')[0].slice(0, 80) || 'Untitled'
+   125→   125→  const contentPreview = memory.content.slice(0, 120).replace(/\n/g, ' ')
+   126→   126→  const relativeTime = formatDistanceToNow(new Date(memory.createdAt), {
+   127→   127→    addSuffix: true,
+   128→   128→  })
+   129→   129→
+   130→   130→  return (
+   131→   131→    <motion.div variants={itemVariants}>
+   132→   132→      <Card className="bg-card border-0 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group">
+   133→   133→        <CardContent className="p-3 md:p-4 space-y-2.5">
+   134→   134→          {/* Top row: type badge + favorite + time */}
+   135→   135→          <div className="flex items-center justify-between gap-2">
+   136→   136→            <Badge
+   137→   137→              variant="secondary"
+   138→   138→              className={cn('gap-1 px-2 py-0.5 h-6 text-[11px] font-medium border-0', config.badgeBg)}
+   139→   139→            >
+   140→   140→              <TypeIcon className="size-3" />
+   141→   141→              {config.label}
+   142→   142→            </Badge>
+   143→   143→
+   144→   144→            <div className="flex items-center gap-1.5">
+   145→   145→              <button
+   146→   146→                onClick={(e) => {
+   147→   147→                  e.stopPropagation()
+   148→   148→                  onToggleFavorite()
+   149→   149→                }}
+   150→   150→                className={cn(
+   151→   151→                  'size-7 rounded-full flex items-center justify-center transition-all duration-150',
+   152→   152→                  'hover:bg-accent active:scale-90',
+   153→   153→                  memory.isFavorite
+   154→   154→                    ? 'text-[#E07A5F]'
+   155→   155→                    : 'text-muted-foreground/40 hover:text-muted-foreground'
+   156→   156→                )}
+   157→   157→                aria-label={memory.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+   158→   158→              >
+   159→   159→                <Heart
+   160→   160→                  className="size-4"
+   161→   161→                  fill={memory.isFavorite ? 'currentColor' : 'none'}
+   162→   162→                />
+   163→   163→              </button>
+   164→   164→              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+   165→   165→                {relativeTime}
+   166→   166→              </span>
+   167→   167→            </div>
+   168→   168→          </div>
+   169→   169→
+   170→   170→          {/* Title */}
+   171→   171→          <p
+   172→   172→            className="text-sm font-semibold text-foreground leading-snug line-clamp-1"
+   173→   173→            onClick={onClick}
+   174→   174→          >
+   175→   175→            {displayTitle}
+   176→   176→          </p>
+   177→   177→
+   178→   178→          {/* Content preview */}
+   179→   179→          {memory.content && memory.title && (
+   180→   180→            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+   181→   181→              {contentPreview}
+   182→   182→            </p>
+   183→   183→          )}
+   184→   184→
+   185→   185→          {/* Tags + Collections */}
+   186→   186→          <div className="flex flex-wrap items-center gap-1.5">
+   187→   187→            {memory.tags.slice(0, 4).map((tag) => (
+   188→   188→              <Badge
+   189→   189→                key={tag}
+   190→   190→                variant="secondary"
+   191→   191→                className="text-[10px] px-1.5 py-0 h-5 font-normal bg-[#6D597A]/10 text-[#6D597A] border-0"
+   192→   192→              >
+   193→   193→                {tag}
+   194→   194→              </Badge>
+   195→   195→            ))}
+   196→   196→            {memory.tags.length > 4 && (
+   197→   197→              <Badge
+   198→   198→                variant="secondary"
+   199→   199→                className="text-[10px] px-1.5 py-0 h-5 font-normal bg-muted text-muted-foreground border-0"
+   200→   200→              >
+   201→   201→                +{memory.tags.length - 4}
+   202→   202→              </Badge>
+   203→   203→            )}
+   204→   204→            {memory.collections.slice(0, 2).map((col) => (
+   205→   205→              <Badge
+   206→   206→                key={col.id}
+   207→   207→                variant="secondary"
+   208→   208→                className="text-[10px] px-1.5 py-0 h-5 font-normal border-0 gap-1"
+   209→   209→                style={{
+   210→   210→                  backgroundColor: `${col.color}15`,
+   211→   211→                  color: col.color,
+   212→   212→                }}
+   213→   213→              >
+   214→   214→                <span className="text-[9px]">{col.icon || '📁'}</span>
+   215→   215→                {col.name}
+   216→   216→              </Badge>
+   217→   217→            ))}
+   218→   218→            {memory.collections.length > 2 && (
+   219→   219→              <Badge
+   220→   220→                variant="secondary"
+   221→   221→                className="text-[10px] px-1.5 py-0 h-5 font-normal bg-muted text-muted-foreground border-0"
+   222→   222→              >
+   223→   223→                +{memory.collections.length - 2}
+   224→   224→              </Badge>
+   225→   225→            )}
+   226→   226→          </div>
+   227→   227→        </CardContent>
+   228→   228→      </Card>
+   229→   229→    </motion.div>
+   230→   230→  )
+   231→   231→}
+   232→   232→
+   233→   233→// ─── Memory Detail View ─────────────────────────────────────────────
+   234→   234→function MemoryDetail({
+   235→   235→  memory,
+   236→   236→  onBack,
+   237→   237→  onToggleFavorite,
+   238→   238→  onDelete,
+   239→   239→}: {
+   240→   240→  memory: Memory
+   241→   241→  onBack: () => void
+   242→   242→  onToggleFavorite: () => void
+   243→   243→  onDelete: () => void
+   244→   244→}) {
+   245→   245→  const config = typeConfig[memory.type]
+   246→   246→  const TypeIcon = config.icon
+   247→   247→  const relativeTime = formatDistanceToNow(new Date(memory.createdAt), {
+   248→   248→    addSuffix: true,
+   249→   249→  })
+   250→   250→
+   251→   251→  return (
+   252→   252→    <motion.div
+   253→   253→      variants={detailVariants}
+   254→   254→      initial="hidden"
+   255→   255→      animate="visible"
+   256→   256→      exit="exit"
+   257→   257→      className="space-y-5"
+   258→   258→    >
+   259→   259→      {/* Back button + actions */}
+   260→   260→      <div className="flex items-center justify-between">
+   261→   261→        <Button
+   262→   262→          variant="ghost"
+   263→   263→          size="sm"
+   264→   264→          onClick={onBack}
+   265→   265→          className="gap-1.5 text-muted-foreground hover:text-foreground -ml-2"
+   266→   266→        >
+   267→   267→          <ArrowLeft className="size-4" />
+   268→   268→          Back
+   269→   269→        </Button>
+   270→   270→
+   271→   271→        <div className="flex items-center gap-1.5">
+   272→   272→          <Button
+   273→   273→            variant="ghost"
+   274→   274→            size="icon"
+   275→   275→            onClick={onToggleFavorite}
+   276→   276→            className={cn(
+   277→   277→              'size-9',
+   278→   278→              memory.isFavorite ? 'text-[#E07A5F]' : 'text-muted-foreground'
+   279→   279→            )}
+   280→   280→          >
+   281→   281→            <Heart
+   282→   282→              className="size-4"
+   283→   283→              fill={memory.isFavorite ? 'currentColor' : 'none'}
+   284→   284→            />
+   285→   285→          </Button>
+   286→   286→          <Button
+   287→   287→            variant="ghost"
+   288→   288→            size="icon"
+   289→   289→            onClick={onDelete}
+   290→   290→            className="size-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+   291→   291→          >
+   292→   292→            <Trash2 className="size-4" />
+   293→   293→          </Button>
+   294→   294→        </div>
+   295→   295→      </div>
+   296→   296→
+   297→   297→      {/* Title + type badge */}
+   298→   298→      <div className="space-y-3">
+   299→   299→        <div className="flex items-center gap-2.5">
+   300→   300→          <div
+   301→   301→            className={cn(
+   302→   302→              'size-9 rounded-lg flex items-center justify-center shrink-0',
+   303→   303→              config.bg
+   304→   304→            )}
+   305→   305→          >
+   306→   306→            <TypeIcon className="size-4" style={{ color: config.color }} />
+   307→   307→          </div>
+   308→   308→          <Badge
+   309→   309→            variant="secondary"
+   310→   310→            className={cn('gap-1 px-2 py-0.5 h-6 text-[11px] font-medium border-0', config.badgeBg)}
+   311→   311→          >
+   312→   312→            {config.label}
+   313→   313→          </Badge>
+   314→   314→          <span className="text-xs text-muted-foreground">{relativeTime}</span>
+   315→   315→        </div>
+   316→   316→
+   317→   317→        <h2 className="text-xl font-bold text-foreground leading-tight">
+   318→   318→          {memory.title || 'Untitled'}
+   319→   319→        </h2>
+   320→   320→      </div>
+   321→   321→
+   322→   322→      {/* Content */}
+   323→   323→      <Card className="bg-card border-0 shadow-sm">
+   324→   324→        <CardContent className="p-4 md:p-5">
+   325→   325→          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+   326→   326→            {memory.content}
+   327→   327→          </p>
+   328→   328→        </CardContent>
+   329→   329→      </Card>
+   330→   330→
+   331→   331→      {/* Source URL */}
+   332→   332→      {memory.sourceUrl && (
+   333→   333→        <div className="space-y-1.5">
+   334→   334→          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+   335→   335→            Source
+   336→   336→          </p>
+   337→   337→          <a
+   338→   338→            href={memory.sourceUrl}
+   339→   339→            target="_blank"
+   340→   340→            rel="noopener noreferrer"
+   341→   341→            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline break-all"
+   342→   342→          >
+   343→   343→            <ExternalLink className="size-3.5 shrink-0" />
+   344→   344→            {memory.sourceUrl}
+   345→   345→          </a>
+   346→   346→        </div>
+   347→   347→      )}
+   348→   348→
+   349→   349→      {/* Tags */}
+   350→   350→      {memory.tags.length > 0 && (
+   351→   351→        <div className="space-y-2">
+   352→   352→          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+   353→   353→            <Tag className="size-3" />
+   354→   354→            Tags
+   355→   355→          </p>
+   356→   356→          <div className="flex flex-wrap gap-2">
+   357→   357→            {memory.tags.map((tag) => (
+   358→   358→              <Badge
+   359→   359→                key={tag}
+   360→   360→                variant="secondary"
+   361→   361→                className="text-xs px-2.5 py-1 h-7 font-normal bg-[#6D597A]/10 text-[#6D597A] border-0"
+   362→   362→              >
+   363→   363→                {tag}
+   364→   364→              </Badge>
+   365→   365→            ))}
+   366→   366→          </div>
+   367→   367→        </div>
+   368→   368→      )}
+   369→   369→
+   370→   370→      {/* Collections */}
+   371→   371→      {memory.collections.length > 0 && (
+   372→   372→        <div className="space-y-2">
+   373→   373→          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+   374→   374→            <FolderOpen className="size-3" />
+   375→   375→            Collections
+   376→   376→          </p>
+   377→   377→          <div className="flex flex-wrap gap-2">
+   378→   378→            {memory.collections.map((col) => (
+   379→   379→              <Badge
+   380→   380→                key={col.id}
+   381→   381→                variant="secondary"
+   382→   382→                className="text-xs px-2.5 py-1 h-7 font-normal border-0 gap-1.5"
+   383→   383→                style={{
+   384→   384→                  backgroundColor: `${col.color}15`,
+   385→   385→                  color: col.color,
+   386→   386→                }}
+   387→   387→              >
+   388→   388→                <span className="text-[10px]">{col.icon || '📁'}</span>
+   389→   389→                {col.name}
+   390→   390→              </Badge>
+   391→   391→            ))}
+   392→   392→          </div>
+   393→   393→        </div>
+   394→   394→      )}
+   395→   395→
+   396→   396→      {/* Summary */}
+   397→   397→      {memory.summary && (
+   398→   398→        <div className="space-y-2">
+   399→   399→          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+   400→   400→            AI Summary
+   401→   401→          </p>
+   402→   402→          <Card className="bg-[#6D597A]/5 border-0">
+   403→   403→            <CardContent className="p-4">
+   404→   404→              <p className="text-sm text-foreground/80 leading-relaxed italic">
+   405→   405→                {memory.summary}
+   406→   406→              </p>
+   407→   407→            </CardContent>
+   408→   408→          </Card>
+   409→   409→        </div>
+   410→   410→      )}
+   411→   411→    </motion.div>
+   412→   412→  )
+   413→   413→}
+   414→   414→
+   415→   415→// ─── Empty State ────────────────────────────────────────────────────
+   416→   416→function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+   417→   417→  const { setCurrentView, setSearchQuery, setFilterType } = useAetherStore()
+   418→   418→
+   419→   419→  return (
+   420→   420→    <motion.div
+   421→   421→      initial={{ opacity: 0, y: 20 }}
+   422→   422→      animate={{ opacity: 1, y: 0 }}
+   423→   423→      transition={{ duration: 0.4, ease: 'easeOut' }}
+   424→   424→      className="flex flex-col items-center justify-center py-16 text-center"
+   425→   425→    >
+   426→   426→      <div className="size-20 rounded-2xl bg-[#6D597A]/10 flex items-center justify-center mb-6">
+   427→   427→        <BookOpen className="size-10 text-[#6D597A]/40" />
+   428→   428→      </div>
+   429→   429→
+   430→   430→      <h3 className="text-lg font-semibold text-foreground mb-2">
+   431→   431→        {hasFilters ? 'No memories found' : 'No memories yet'}
+   432→   432→      </h3>
+   433→   433→
+   434→   434→      <p className="text-sm text-muted-foreground max-w-[260px] mb-6">
+   435→   435→        {hasFilters
+   436→   436→          ? 'Try adjusting your search or filters to find what you\'re looking for.'
+   437→   437→          : 'Start capturing your thoughts, links, and ideas.'}
+   438→   438→      </p>
+   439→   439→
+   440→   440→      {hasFilters ? (
+   441→   441→        <Button
+   442→   442→          variant="outline"
+   443→   443→          onClick={() => {
+   444→   444→            setSearchQuery('')
+   445→   445→            setFilterType('all')
+   446→   446→          }}
+   447→   447→          className="gap-2"
+   448→   448→        >
+   449→   449→          <X className="size-4" />
+   450→   450→          Clear Filters
+   451→   451→        </Button>
+   452→   452→      ) : (
+   453→   453→        <Button
+   454→   454→          onClick={() => setCurrentView('dashboard')}
+   455→   455→          className="gap-2 bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground hover:opacity-90 shadow-md"
+   456→   456→        >
+   457→   457→          <Plus className="size-4" />
+   458→   458→          Add Your First Memory
+   459→   459→        </Button>
+   460→   460→      )}
+   461→   461→    </motion.div>
+   462→   462→  )
+   463→   463→}
+   464→   464→
+   465→   465→// ─── Main Memories Component ────────────────────────────────────────
+   466→   466→export function Memories() {
+   467→   467→  const {
+   468→   468→    memories,
+   469→   469→    collections,
+   470→   470→    searchQuery,
+   471→   471→    setSearchQuery,
+   472→   472→    filterType,
+   473→   473→    setFilterType,
+   474→   474→    selectedMemoryId,
+   475→   475→    setSelectedMemoryId,
+   476→   476→    selectedCollectionId,
+   477→   477→    setSelectedCollectionId,
+   478→   478→    deleteMemory,
+   479→   479→    updateMemory,
+   480→   480→    setCurrentView,
+   481→   481→  } = useAetherStore()
+   482→   482→
+   483→   483→  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+   484→   484→  const [isDeleting, setIsDeleting] = useState(false)
+   485→   485→
+   486→   486→  // ── Filtered memories ────────────────────────────────────────────
+   487→   487→  const filteredMemories = useMemo(() => {
+   488→   488→    let result = [...memories]
+   489→   489→
+   490→   490→    // Filter by selected collection
+   491→   491→    if (selectedCollectionId) {
+   492→   492→      result = result.filter((m) =>
+   493→   493→        m.collections.some((c) => c.id === selectedCollectionId)
+   494→   494→      )
+   495→   495→    }
+   496→   496→
+   497→   497→    // Filter by type
+   498→   498→    if (filterType !== 'all') {
+   499→   499→      result = result.filter((m) => m.type === filterType)
+   500→   500→    }
+   501→   501→
+   502→   502→    // Search filter
+   503→   503→    if (searchQuery.trim()) {
+   504→   504→      const q = searchQuery.toLowerCase().trim()
+   505→   505→      result = result.filter(
+   506→   506→        (m) =>
+   507→   507→          m.title.toLowerCase().includes(q) ||
+   508→   508→          m.content.toLowerCase().includes(q) ||
+   509→   509→          m.tags.some((t) => t.toLowerCase().includes(q))
+   510→   510→      )
+   511→   511→    }
+   512→   512→
+   513→   513→    // Sort by date (newest first)
+   514→   514→    result.sort(
+   515→   515→      (a, b) =>
+   516→   516→        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+   517→   517→    )
+   518→   518→
+   519→   519→    return result
+   520→   520→  }, [memories, searchQuery, filterType, selectedCollectionId])
+   521→   521→
+   522→   522→  // ── Selected memory ──────────────────────────────────────────────
+   523→   523→  const selectedMemory = useMemo(
+   524→   524→    () => memories.find((m) => m.id === selectedMemoryId) || null,
+   525→   525→    [memories, selectedMemoryId]
+   526→   526→  )
+   527→   527→
+   528→   528→  // ── Selected collection name ─────────────────────────────────────
+   529→   529→  const selectedCollection = useMemo(
+   530→   530→    () => collections.find((c) => c.id === selectedCollectionId) || null,
+   531→   531→    [collections, selectedCollectionId]
+   532→   532→  )
+   533→   533→
+   534→   534→  // ── Handlers ─────────────────────────────────────────────────────
+   535→   535→  const handleToggleFavorite = useCallback(
+   536→   536→    async (memory: Memory) => {
+   537→   537→      const newFavorite = !memory.isFavorite
+   538→   538→      // Optimistic update
+   539→   539→      updateMemory(memory.id, { isFavorite: newFavorite })
+   540→   540→      try {
+   541→   541→        await fetch(`/api/memories/${memory.id}`, {
+   542→   542→          method: 'PATCH',
+   543→   543→          headers: { 'Content-Type': 'application/json' },
+   544→   544→          body: JSON.stringify({ isFavorite: newFavorite }),
+   545→   545→        })
+   546→   546→      } catch {
+   547→   547→        // Revert on error
+   548→   548→        updateMemory(memory.id, { isFavorite: !newFavorite })
+   549→   549→      }
+   550→   550→    },
+   551→   551→    [updateMemory]
+   552→   552→  )
+   553→   553→
+   554→   554→  const handleDelete = useCallback(async () => {
+   555→   555→    if (!deleteTarget) return
+   556→   556→    setIsDeleting(true)
+   557→   557→    try {
+   558→   558→      const res = await fetch(`/api/memories/${deleteTarget}`, {
+   559→   559→        method: 'DELETE',
+   560→   560→      })
+   561→   561→      if (res.ok) {
+   562→   562→        deleteMemory(deleteTarget)
+   563→   563→        if (selectedMemoryId === deleteTarget) {
+   564→   564→          setSelectedMemoryId(null)
+   565→   565→        }
+   566→   566→      }
+   567→   567→    } catch {
+   568→   568→      // Handle error silently
+   569→   569→    } finally {
+   570→   570→      setIsDeleting(false)
+   571→   571→      setDeleteTarget(null)
+   572→   572→    }
+   573→   573→  }, [deleteTarget, deleteMemory, selectedMemoryId, setSelectedMemoryId])
+   574→   574→
+   575→   575→  const handleBack = useCallback(() => {
+   576→   576→    setSelectedMemoryId(null)
+   577→   577→  }, [setSelectedMemoryId])
+   578→   578→
+   579→   579→  const hasFilters = searchQuery.trim() !== '' || filterType !== 'all' || !!selectedCollectionId
+   580→   580→
+   581→   581→  return (
+   582→   582→    <div className="max-w-3xl mx-auto pb-24 md:pb-8">
+   583→   583→      <AnimatePresence mode="wait">
+   584→   584→        {selectedMemory ? (
+   585→   585→          /* ── Detail View ──────────────────────────────────────────── */
+   586→   586→          <MemoryDetail
+   587→   587→            key="detail"
+   588→   588→            memory={selectedMemory}
+   589→   589→            onBack={handleBack}
+   590→   590→            onToggleFavorite={() => handleToggleFavorite(selectedMemory)}
+   591→   591→            onDelete={() => setDeleteTarget(selectedMemory.id)}
+   592→   592→          />
+   593→   593→        ) : (
+   594→   594→          /* ── List View ────────────────────────────────────────────── */
+   595→   595→          <motion.div
+   596→   596→            key="list"
+   597→   597→            variants={containerVariants}
+   598→   598→            initial="hidden"
+   599→   599→            animate="visible"
+   600→   600→            className="space-y-5"
+   601→   601→          >
+   602→   602→            {/* ── Header ────────────────────────────────────────────── */}
+   603→   603→            <motion.div variants={itemVariants}>
+   604→   604→              <div className="flex items-center justify-between">
+   605→   605→                <div>
+   606→   606→                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
+   607→   607→                    <BookOpen className="size-7 text-[#6D597A]" />
+   608→   608→                    Memories
+   609→   609→                    {selectedCollection && (
+   610→   610→                      <Badge
+   611→   611→                        variant="secondary"
+   612→   612→                        className="text-xs px-2.5 py-1 h-7 font-medium border-0 gap-1.5 ml-1"
+   613→   613→                        style={{
+   614→   614→                          backgroundColor: `${selectedCollection.color}15`,
+   615→   615→                          color: selectedCollection.color,
+   616→   616→                        }}
+   617→   617→                      >
+   618→   618→                        <span className="text-[10px]">{selectedCollection.icon}</span>
+   619→   619→                        {selectedCollection.name}
+   620→   620→                        <button
+   621→   621→                          onClick={() => setSelectedCollectionId(null)}
+   622→   622→                          className="ml-0.5 size-4 rounded-full hover:bg-black/10 flex items-center justify-center"
+   623→   623→                          aria-label="Clear collection filter"
+   624→   624→                        >
+   625→   625→                          <X className="size-3" />
+   626→   626→                        </button>
+   627→   627→                      </Badge>
+   628→   628→                    )}
+   629→   629→                  </h1>
+   630→   630→                  <p className="text-sm text-muted-foreground mt-1">
+   631→   631→                    {filteredMemories.length}{' '}
+   632→   632→                    {filteredMemories.length === 1 ? 'memory' : 'memories'}
+   633→   633→                  </p>
+   634→   634→                </div>
+   635→   635→
+   636→   636→                <Button
+   637→   637→                  onClick={() => setCurrentView('dashboard')}
+   638→   638→                  className="gap-2 bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground hover:opacity-90 shadow-md"
+   639→   639→                  size="sm"
+   640→   640→                >
+   641→   641→                  <Plus className="size-4" />
+   642→   642→                  <span className="hidden sm:inline">Add</span>
+   643→   643→                </Button>
+   644→   644→              </div>
+   645→   645→            </motion.div>
+   646→   646→
+   647→   647→            {/* ── Search Bar ────────────────────────────────────────── */}
+   648→   648→            <motion.div variants={itemVariants}>
+   649→   649→              <div className="relative">
+   650→   650→                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   651→   651→                <Input
+   652→   652→                  value={searchQuery}
+   653→   653→                  onChange={(e) => setSearchQuery(e.target.value)}
+   654→   654→                  placeholder="Search memories by title, content, or tags..."
+   655→   655→                  className="h-10 pl-9 pr-9 text-sm bg-card border-0 shadow-sm
+   656→   656→                    focus-visible:ring-primary/30 focus-visible:border-primary/50"
+   657→   657→                />
+   658→   658→                {searchQuery && (
+   659→   659→                  <button
+   660→   660→                    onClick={() => setSearchQuery('')}
+   661→   661→                    className="absolute right-3 top-1/2 -translate-y-1/2 size-5 rounded-full bg-muted flex items-center justify-center hover:bg-accent transition-colors"
+   662→   662→                    aria-label="Clear search"
+   663→   663→                  >
+   664→   664→                    <X className="size-3" />
+   665→   665→                  </button>
+   666→   666→                )}
+   667→   667→              </div>
+   668→   668→            </motion.div>
+   669→   669→
+   670→   670→            {/* ── Filter Pills ─────────────────────────────────────── */}
+   671→   671→            <motion.div variants={itemVariants}>
+   672→   672→              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none -mx-1 px-1">
+   673→   673→                {filterOptions.map((option) => {
+   674→   674→                  const Icon = option.icon
+   675→   675→                  const isActive = filterType === option.type
+   676→   676→                  return (
+   677→   677→                    <button
+   678→   678→                      key={option.type}
+   679→   679→                      onClick={() => setFilterType(option.type)}
+   680→   680→                      className={cn(
+   681→   681→                        'flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium whitespace-nowrap',
+   682→   682→                        'transition-all duration-150 hover:shadow-sm active:scale-[0.97]',
+   683→   683→                        'border',
+   684→   684→                        isActive
+   685→   685→                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+   686→   686→                          : 'bg-card text-muted-foreground border-border hover:border-primary/30 hover:text-foreground'
+   687→   687→                      )}
+   688→   688→                    >
+   689→   689→                      <Icon className="size-3.5" />
+   690→   690→                      {option.label}
+   691→   691→                    </button>
+   692→   692→                  )
+   693→   693→                })}
+   694→   694→              </div>
+   695→   695→            </motion.div>
+   696→   696→
+   697→   697→            {/* ── Memory List ───────────────────────────────────────── */}
+   698→   698→            {filteredMemories.length === 0 ? (
+   699→   699→              <EmptyState hasFilters={hasFilters} />
+   700→   700→            ) : (
+   701→   701→              <div className="max-h-[calc(100dvh-18rem)] md:max-h-[calc(100dvh-14rem)] overflow-y-auto pr-1 space-y-2.5">
+   702→   702→                {filteredMemories.map((memory) => (
+   703→   703→                  <MemoryCard
+   704→   704→                    key={memory.id}
+   705→   705→                    memory={memory}
+   706→   706→                    onClick={() => setSelectedMemoryId(memory.id)}
+   707→   707→                    onToggleFavorite={() => handleToggleFavorite(memory)}
+   708→   708→                  />
+   709→   709→                ))}
+   710→   710→              </div>
+   711→   711→            )}
+   712→   712→          </motion.div>
+   713→   713→        )}
+   714→   714→      </AnimatePresence>
+   715→   715→
+   716→   716→      {/* ── Delete Confirmation ─────────────────────────────────────── */}
+   717→   717→      <AlertDialog
+   718→   718→        open={!!deleteTarget}
+   719→   719→        onOpenChange={(open) => !open && setDeleteTarget(null)}
+   720→   720→      >
+   721→   721→        <AlertDialogContent>
+   722→   722→          <AlertDialogHeader>
+   723→   723→            <AlertDialogTitle>Delete Memory</AlertDialogTitle>
+   724→   724→            <AlertDialogDescription>
+   725→   725→              Are you sure you want to delete this memory? This action cannot be undone.
+   726→   726→            </AlertDialogDescription>
+   727→   727→          </AlertDialogHeader>
+   728→   728→          <AlertDialogFooter>
+   729→   729→            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+   730→   730→            <AlertDialogAction
+   731→   731→              onClick={handleDelete}
+   732→   732→              disabled={isDeleting}
+   733→   733→              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+   734→   734→            >
+   735→   735→              {isDeleting ? (
+   736→   736→                <>
+   737→   737→                  <Loader2 className="size-4 animate-spin" />
+   738→   738→                  Deleting...
+   739→   739→                </>
+   740→   740→              ) : (
+   741→   741→                'Delete'
+   742→   742→              )}
+   743→   743→            </AlertDialogAction>
+   744→   744→          </AlertDialogFooter>
+   745→   745→        </AlertDialogContent>
+   746→   746→      </AlertDialog>
+   747→   747→    </div>
+   748→   748→  )
+   749→   749→}
+   750→   750→
