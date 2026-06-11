@@ -9,19 +9,19 @@ import {
   TrendingUp,
   Heart,
   FileText,
-  LinkIcon,
+  Link2,
   ImageIcon,
   Mic,
   ArrowRight,
   Sparkles,
   Send,
   Loader2,
+  Layers,
 } from 'lucide-react'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -53,7 +53,7 @@ function getFormattedDate(): string {
 
 const typeIconMap: Record<MemoryType, React.ElementType> = {
   text: FileText,
-  link: LinkIcon,
+  link: Link2,
   image: ImageIcon,
   voice: Mic,
 }
@@ -72,7 +72,7 @@ interface DashboardProps {
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Dashboard({ onAddMemory }: DashboardProps) {
-  const { memories, collections, setCurrentView, requireAuth, isAuthenticated, saveMemory } = useAetherStore()
+  const { memories, collections, setCurrentView, requireAuth, isAuthenticated, saveMemory, darkMode } = useAetherStore()
 
   // ── Capture bar state ──────────────────────────────────────────────
   const [captureText, setCaptureText] = useState('')
@@ -149,17 +149,18 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
     [memories]
   )
 
-  // ── Quick-add definitions ──────────────────────────────────────────
+  // ── Quick-add definitions with Lucide icons ────────────────────────
   const quickAddItems: {
     type: MemoryType
     label: string
-    emoji: string
+    icon: React.ElementType
     bg: string
+    iconColor: string
   }[] = [
-    { type: 'text', label: 'Note', emoji: '📝', bg: 'bg-[#EAD8D0]/60' },
-    { type: 'link', label: 'Link', emoji: '🔗', bg: 'bg-[#D4E8DB]/60' },
-    { type: 'image', label: 'Image', emoji: '📷', bg: 'bg-[#D6D8EB]/60' },
-    { type: 'voice', label: 'Voice', emoji: '🎤', bg: 'bg-[#EAD6E0]/60' },
+    { type: 'text', label: 'Note', icon: FileText, bg: 'bg-purple-600/10 border-purple-500/20', iconColor: 'text-purple-400' },
+    { type: 'link', label: 'Link', icon: Link2, bg: 'bg-emerald-600/10 border-emerald-500/20', iconColor: 'text-emerald-400' },
+    { type: 'image', label: 'Image', icon: ImageIcon, bg: 'bg-blue-600/10 border-blue-500/20', iconColor: 'text-blue-400' },
+    { type: 'voice', label: 'Voice', icon: Mic, bg: 'bg-pink-600/10 border-pink-500/20', iconColor: 'text-pink-400' },
   ]
 
   // ── Stat cards ─────────────────────────────────────────────────────
@@ -168,110 +169,181 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
       label: 'Total Memories',
       value: memories.length,
       icon: BookOpen,
-      color: 'text-[#6D597A]',
-      bg: 'bg-[#6D597A]/10',
+      color: 'text-purple-400',
+      bg: 'bg-purple-600/10',
     },
     {
       label: 'Collections',
       value: collections.length,
-      icon: FolderOpen,
-      color: 'text-[#E07A5F]',
-      bg: 'bg-[#E07A5F]/10',
+      icon: Layers,
+      color: 'text-orange-400',
+      bg: 'bg-orange-600/10',
     },
     {
       label: 'This Week',
       value: thisWeekCount,
       icon: TrendingUp,
-      color: 'text-[#81B29A]',
-      bg: 'bg-[#81B29A]/10',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-600/10',
     },
     {
       label: 'Favorites',
       value: favoriteCount,
       icon: Heart,
-      color: 'text-[#F2CC8F]',
-      bg: 'bg-[#F2CC8F]/10',
+      color: 'text-yellow-400',
+      bg: 'bg-yellow-600/10',
     },
   ]
 
+  const isDark = darkMode
+
   return (
     <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-8 max-w-5xl mx-auto pb-24 md:pb-8"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+      className="relative space-y-8 max-w-5xl mx-auto pb-24 md:pb-8"
     >
+      {/* ── Ambient Blurs (Dark Mode) ──────────────────────────────── */}
+      {isDark && (
+        <>
+          <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-purple-700/10 rounded-full blur-[150px] pointer-events-none z-0" />
+          <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-indigo-700/10 rounded-full blur-[130px] pointer-events-none z-0" />
+        </>
+      )}
+
       {/* ── Greeting Section ──────────────────────────────────────── */}
-      <motion.section variants={itemVariants} className="space-y-1">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 space-y-1"
+      >
+        <motion.h1
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2, duration: 0.5 }}
+          className={cn(
+            'text-3xl md:text-4xl font-bold tracking-tight',
+            isDark ? 'text-white' : 'text-foreground'
+          )}
+        >
           {getGreeting()} ✨
-        </h1>
-        <p className="text-lg text-muted-foreground">What&apos;s on your mind?</p>
-        <p className="text-sm text-muted-foreground/70">{getFormattedDate()}</p>
+        </motion.h1>
+        <motion.p
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
+          className={cn('text-lg', isDark ? 'text-white/50' : 'text-muted-foreground')}
+        >
+          What&apos;s on your mind?
+        </motion.p>
+        <motion.p
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4, duration: 0.5 }}
+          className={cn('text-sm', isDark ? 'text-white/30' : 'text-muted-foreground/70')}
+        >
+          {getFormattedDate()}
+        </motion.p>
       </motion.section>
 
-      {/* ── Capture Bar ───────────────────────────────────────────── */}
-      <motion.section variants={itemVariants}>
-        <div className="relative">
-          <Input
-            value={captureText}
-            onChange={(e) => setCaptureText(e.target.value)}
-            onKeyDown={handleCaptureKeyDown}
-            placeholder="Capture a thought... press Enter to save"
-            disabled={isCapturing}
-            className="h-12 pl-4 pr-12 rounded-xl text-sm border-border
-              bg-white shadow-sm
-              focus-visible:ring-primary/30 focus-visible:border-primary/50
-              placeholder:text-muted-foreground/60"
-          />
-          <button
-            onClick={handleCapture}
-            disabled={!captureText.trim() || isCapturing}
-            className={cn(
-              'absolute right-2 top-1/2 -translate-y-1/2 size-8 rounded-lg flex items-center justify-center transition-all',
-              captureText.trim()
-                ? 'bg-gradient-to-r from-primary to-[#8B6F9A] text-white shadow-md hover:opacity-90 active:scale-95'
-                : 'bg-muted text-muted-foreground'
-            )}
-          >
-            {isCapturing ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Send className="size-4" />
-            )}
-          </button>
+      {/* ── Gravity Capture Bar ───────────────────────────────────── */}
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10"
+      >
+        <div className={cn(
+          'relative p-1.5 transition-all duration-300',
+          isDark
+            ? 'bg-white/[0.02] border border-white/[0.06] rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_60px_-10px_rgba(139,92,246,0.4)] focus-within:border-purple-500/30'
+            : 'bg-white border border-border rounded-xl shadow-sm focus-within:shadow-md focus-within:border-primary/50'
+        )}>
+          <div className="flex items-center gap-2">
+            <input
+              value={captureText}
+              onChange={(e) => setCaptureText(e.target.value)}
+              onKeyDown={handleCaptureKeyDown}
+              placeholder="Capture a thought... press Enter to save"
+              disabled={isCapturing}
+              className={cn(
+                'w-full bg-transparent text-base focus:outline-none px-4 py-3',
+                isDark
+                  ? 'text-white placeholder:text-white/25'
+                  : 'text-foreground placeholder:text-muted-foreground/60'
+              )}
+            />
+            <button
+              onClick={handleCapture}
+              disabled={!captureText.trim() || isCapturing}
+              className={cn(
+                'flex items-center justify-center text-sm font-medium px-4 py-1.5 rounded-lg transition-all duration-200 active:scale-95 shrink-0',
+                captureText.trim()
+                  ? isDark
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_15px_-3px_rgba(139,92,246,0.6)] hover:shadow-[0_0_25px_-3px_rgba(139,92,246,0.8)]'
+                    : 'bg-gradient-to-r from-primary to-[#8B6F9A] text-white shadow-md hover:opacity-90'
+                  : isDark
+                    ? 'bg-white/[0.06] text-white/25'
+                    : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {isCapturing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+            </button>
+          </div>
         </div>
       </motion.section>
 
-      {/* ── Quick-Add Buttons ─────────────────────────────────────── */}
-      <motion.section variants={itemVariants}>
+      {/* ── Quick-Add Buttons with Lucide icons + Spring animations ── */}
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10"
+      >
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-1 px-1">
-          {quickAddItems.map((item) => (
-            <button
-              key={item.type}
-              onClick={() => {
-                if (!isAuthenticated) {
-                  requireAuth(() => onAddMemory?.(item.type))
-                } else {
-                  onAddMemory?.(item.type)
-                }
-              }}
-              className={cn(
-                'flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium whitespace-nowrap',
-                'transition-all duration-150 hover:shadow-md hover:scale-[1.03] active:scale-[0.97]',
-                'border border-transparent hover:border-border/50',
-                item.bg
-              )}
-            >
-              <span className="text-base">{item.emoji}</span>
-              {item.label}
-            </button>
-          ))}
+          {quickAddItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <motion.button
+                key={item.type}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    requireAuth(() => onAddMemory?.(item.type))
+                  } else {
+                    onAddMemory?.(item.type)
+                  }
+                }}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium whitespace-nowrap border transition-colors',
+                  isDark
+                    ? `${item.bg} ${item.iconColor} hover:bg-white/[0.06]`
+                    : 'bg-white/80 border-border hover:bg-white hover:shadow-md'
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                {item.label}
+              </motion.button>
+            )
+          })}
         </div>
       </motion.section>
 
       {/* ── Stats Cards ───────────────────────────────────────────── */}
-      <motion.section variants={itemVariants}>
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10"
+      >
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           {statCards.map((stat, i) => {
             const Icon = stat.icon
@@ -281,7 +353,12 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                 variants={itemVariants}
                 custom={i}
               >
-                <Card className="bg-white border-0 shadow-sm hover:shadow-md transition-shadow duration-200">
+                <Card className={cn(
+                  'border-0 transition-shadow duration-200',
+                  isDark
+                    ? 'bg-white/[0.03] shadow-none hover:bg-white/[0.05]'
+                    : 'bg-white shadow-sm hover:shadow-md'
+                )}>
                   <CardContent className="flex items-center gap-4 p-4 md:p-5">
                     <div
                       className={cn(
@@ -292,10 +369,16 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                       <Icon className={cn('size-5', stat.color)} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-2xl font-bold tracking-tight text-foreground leading-none">
+                      <p className={cn(
+                        'text-2xl font-bold tracking-tight leading-none',
+                        isDark ? 'text-white' : 'text-foreground'
+                      )}>
                         {stat.value}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      <p className={cn(
+                        'text-xs mt-0.5 truncate',
+                        isDark ? 'text-white/40' : 'text-muted-foreground'
+                      )}>
                         {stat.label}
                       </p>
                     </div>
@@ -308,16 +391,27 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
       </motion.section>
 
       {/* ── Recent Memories ───────────────────────────────────────── */}
-      <motion.section variants={itemVariants} className="space-y-4">
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 space-y-4"
+      >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <Sparkles className="size-5 text-[#6D597A]" />
+          <h2 className={cn(
+            'text-lg font-semibold flex items-center gap-2',
+            isDark ? 'text-white' : 'text-foreground'
+          )}>
+            <Sparkles className={cn('size-5', isDark ? 'text-purple-400' : 'text-[#6D597A]')} />
             Recent Memories
           </h2>
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-foreground gap-1 -mr-2"
+            className={cn(
+              'gap-1 -mr-2',
+              isDark ? 'text-white/40 hover:text-white hover:bg-white/[0.06]' : 'text-muted-foreground hover:text-foreground'
+            )}
             onClick={() => setCurrentView('memories')}
           >
             View all
@@ -326,15 +420,21 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </div>
 
         {recentMemories.length === 0 ? (
-          <Card className="bg-white border-0 shadow-sm">
+          <Card className={cn(
+            'border-0',
+            isDark ? 'bg-white/[0.03] shadow-none' : 'bg-white shadow-sm'
+          )}>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="size-14 rounded-full bg-[#F5EDE6] flex items-center justify-center mb-4">
-                <BookOpen className="size-6 text-[#6D597A]/50" />
+              <div className={cn(
+                'size-14 rounded-full flex items-center justify-center mb-4',
+                isDark ? 'bg-purple-600/10' : 'bg-[#F5EDE6]'
+              )}>
+                <BookOpen className={cn('size-6', isDark ? 'text-purple-400/50' : 'text-[#6D597A]/50')} />
               </div>
-              <p className="text-sm font-medium text-foreground">
+              <p className={cn('text-sm font-medium', isDark ? 'text-white' : 'text-foreground')}>
                 No memories yet
               </p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[240px]">
+              <p className={cn('text-xs mt-1 max-w-[240px]', isDark ? 'text-white/30' : 'text-muted-foreground')}>
                 Start by typing in the capture bar above!
               </p>
             </CardContent>
@@ -349,16 +449,27 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
       </motion.section>
 
       {/* ── Pinned Collections ────────────────────────────────────── */}
-      <motion.section variants={itemVariants} className="space-y-4">
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 space-y-4"
+      >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <FolderOpen className="size-5 text-[#E07A5F]" />
+          <h2 className={cn(
+            'text-lg font-semibold flex items-center gap-2',
+            isDark ? 'text-white' : 'text-foreground'
+          )}>
+            <Layers className={cn('size-5', isDark ? 'text-orange-400' : 'text-[#E07A5F]')} />
             Collections
           </h2>
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-foreground gap-1 -mr-2"
+            className={cn(
+              'gap-1 -mr-2',
+              isDark ? 'text-white/40 hover:text-white hover:bg-white/[0.06]' : 'text-muted-foreground hover:text-foreground'
+            )}
             onClick={() => setCurrentView('collections')}
           >
             View all
@@ -367,15 +478,21 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </div>
 
         {collections.length === 0 ? (
-          <Card className="bg-white border-0 shadow-sm">
+          <Card className={cn(
+            'border-0',
+            isDark ? 'bg-white/[0.03] shadow-none' : 'bg-white shadow-sm'
+          )}>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="size-14 rounded-full bg-[#F5EDE6] flex items-center justify-center mb-4">
-                <FolderOpen className="size-6 text-[#E07A5F]/50" />
+              <div className={cn(
+                'size-14 rounded-full flex items-center justify-center mb-4',
+                isDark ? 'bg-orange-600/10' : 'bg-[#F5EDE6]'
+              )}>
+                <Layers className={cn('size-6', isDark ? 'text-orange-400/50' : 'text-[#E07A5F]/50')} />
               </div>
-              <p className="text-sm font-medium text-foreground">
+              <p className={cn('text-sm font-medium', isDark ? 'text-white' : 'text-foreground')}>
                 No collections yet
               </p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-[240px]">
+              <p className={cn('text-xs mt-1 max-w-[240px]', isDark ? 'text-white/30' : 'text-muted-foreground')}>
                 Create collections to organize your memories.
               </p>
             </CardContent>
@@ -392,6 +509,34 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
   )
 }
 
+// ─── Collection icon map ────────────────────────────────────────────
+const collectionIconMap: Record<string, React.ElementType> = {
+  '💡': Lightbulb,
+  '❤️': Heart,
+  '💼': Briefcase,
+  '🎓': GraduationCap,
+  '🎵': Music,
+  '✈️': Plane,
+  '☕': Coffee,
+  '💻': Code,
+  '📁': FolderOpen,
+}
+
+function getCollectionIcon(iconStr: string): React.ElementType {
+  return collectionIconMap[iconStr] || Layers
+}
+
+// ─── Imports needed for collection icons ────────────────────────────
+import {
+  Lightbulb,
+  Briefcase,
+  GraduationCap,
+  Music,
+  Plane,
+  Coffee,
+  Code,
+} from 'lucide-react'
+
 // ─── Memory Card ────────────────────────────────────────────────────
 function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
   const Icon = typeIconMap[memory.type]
@@ -400,26 +545,42 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
   const relativeTime = formatDistanceToNow(new Date(memory.createdAt), {
     addSuffix: true,
   })
+  const darkMode = useAetherStore((s) => s.darkMode)
+  const isDark = darkMode
 
   return (
     <motion.div
       variants={itemVariants}
       custom={index}
     >
-      <Card className="bg-white border-0 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer group">
+      <Card className={cn(
+        'border-0 transition-shadow duration-200 cursor-pointer group',
+        isDark
+          ? 'bg-white/[0.03] shadow-none hover:bg-white/[0.05]'
+          : 'bg-white shadow-sm hover:shadow-md'
+      )}>
         <CardContent className="flex items-start gap-3 p-3 md:p-4">
           {/* Type icon */}
-          <div className="flex items-center justify-center size-9 rounded-lg bg-[#F5EDE6] shrink-0 mt-0.5">
-            <Icon className="size-4 text-[#6D597A]" />
+          <div className={cn(
+            'flex items-center justify-center size-9 rounded-lg shrink-0 mt-0.5',
+            isDark ? 'bg-purple-600/10' : 'bg-[#F5EDE6]'
+          )}>
+            <Icon className={cn('size-4', isDark ? 'text-purple-400' : 'text-[#6D597A]')} />
           </div>
 
           {/* Content */}
           <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-foreground leading-snug truncate">
+              <p className={cn(
+                'text-sm font-medium leading-snug truncate',
+                isDark ? 'text-white' : 'text-foreground'
+              )}>
                 {displayTitle}
               </p>
-              <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0 mt-0.5">
+              <span className={cn(
+                'text-[11px] whitespace-nowrap shrink-0 mt-0.5',
+                isDark ? 'text-white/30' : 'text-muted-foreground'
+              )}>
                 {relativeTime}
               </span>
             </div>
@@ -431,7 +592,10 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
                   <Badge
                     key={tag}
                     variant="secondary"
-                    className="text-[10px] px-1.5 py-0 h-5 font-normal bg-[#F5EDE6] text-[#6D597A] border-0"
+                    className={cn(
+                      'text-[10px] px-1.5 py-0 h-5 font-normal border-0',
+                      isDark ? 'bg-purple-600/15 text-purple-300' : 'bg-[#F5EDE6] text-[#6D597A]'
+                    )}
                   >
                     {tag}
                   </Badge>
@@ -439,7 +603,10 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
                 {memory.tags.length > 3 && (
                   <Badge
                     variant="secondary"
-                    className="text-[10px] px-1.5 py-0 h-5 font-normal bg-[#F5EDE6] text-muted-foreground border-0"
+                    className={cn(
+                      'text-[10px] px-1.5 py-0 h-5 font-normal border-0',
+                      isDark ? 'bg-white/[0.06] text-white/30' : 'bg-[#F5EDE6] text-muted-foreground'
+                    )}
                   >
                     +{memory.tags.length - 3}
                   </Badge>
@@ -459,23 +626,41 @@ function CollectionCard({
 }: {
   collection: Collection
 }) {
+  const darkMode = useAetherStore((s) => s.darkMode)
+  const isDark = darkMode
+  const Icon = getCollectionIcon(collection.icon)
+
   return (
     <motion.div variants={itemVariants}>
-      <Card className="bg-white border-0 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer min-w-[160px] max-w-[200px] shrink-0 overflow-hidden">
+      <Card className={cn(
+        'border-0 transition-shadow duration-200 cursor-pointer min-w-[160px] max-w-[200px] shrink-0 overflow-hidden',
+        isDark
+          ? 'bg-white/[0.03] shadow-none hover:bg-white/[0.05]'
+          : 'bg-white shadow-sm hover:shadow-md'
+      )}>
         <div
           className="w-1 h-full absolute left-0 top-0 bottom-0 rounded-l-xl"
           style={{ backgroundColor: collection.color }}
         />
         <CardContent className="p-4 pl-5 space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-lg" role="img" aria-label={collection.name}>
-              {collection.icon}
-            </span>
-            <p className="text-sm font-medium text-foreground truncate">
+            <div className={cn(
+              'flex items-center justify-center size-7 rounded-lg shrink-0',
+              isDark ? 'bg-white/[0.06]' : 'bg-white'
+            )}>
+              {React.createElement(Icon, { className: 'size-4', style: { color: collection.color } })}
+            </div>
+            <p className={cn(
+              'text-sm font-medium truncate',
+              isDark ? 'text-white' : 'text-foreground'
+            )}>
               {collection.name}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className={cn(
+            'text-xs',
+            isDark ? 'text-white/30' : 'text-muted-foreground'
+          )}>
             {collection.memoryCount}{' '}
             {collection.memoryCount === 1 ? 'memory' : 'memories'}
           </p>

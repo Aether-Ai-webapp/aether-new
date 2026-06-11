@@ -76,7 +76,23 @@ const PRESET_ICONS = [
   { emoji: '✈️', label: 'Travel', Icon: Plane },
   { emoji: '☕', label: 'Coffee', Icon: Coffee },
   { emoji: '💻', label: 'Code', Icon: Code },
+  { emoji: '🎨', label: 'Design', Icon: Palette },
 ]
+
+// ─── Icon helpers ────────────────────────────────────────────────────
+function CollectionIcon({ emoji, color }: { emoji: string; color: string }) {
+  const preset = PRESET_ICONS.find((p) => p.emoji === emoji)
+  if (preset) {
+    const Icon = preset.Icon
+    return <Icon className="size-4" style={{ color }} />
+  }
+  return <FolderOpen className="size-4" style={{ color }} />
+}
+
+function PresetIcon({ preset, selected }: { preset: { emoji: string; label: string; Icon: React.ElementType }; selected: boolean }) {
+  const Icon = preset.Icon
+  return <Icon className={cn('size-4', selected ? 'text-primary' : 'text-muted-foreground')} />
+}
 
 // ─── Animation variants ─────────────────────────────────────────────
 const containerVariants = {
@@ -247,7 +263,7 @@ function NewCollectionDialog({
                   )}
                   aria-label={`Select ${preset.label} icon`}
                 >
-                  <span className="text-base">{preset.emoji}</span>
+                  <PresetIcon preset={preset} selected={icon === preset.emoji} />
                 </button>
               ))}
             </div>
@@ -315,9 +331,7 @@ function CollectionCard({
                   className="size-9 rounded-lg flex items-center justify-center shrink-0"
                   style={{ backgroundColor: `${collection.color}18` }}
                 >
-                  <span className="text-base" role="img" aria-label={collection.name}>
-                    {collection.icon}
-                  </span>
+                  <CollectionIcon emoji={collection.icon} color={collection.color} />
                 </div>
                 <p className="text-sm font-semibold text-foreground truncate flex-1">
                   {collection.name}

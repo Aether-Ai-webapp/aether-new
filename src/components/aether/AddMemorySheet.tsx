@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback } from 'react'
-import { FileText, LinkIcon, ImageIcon, Mic, Loader2 } from 'lucide-react'
+import { FileText, Link2, ImageIcon, Mic, Loader2 } from 'lucide-react'
 import { useAetherStore, type MemoryType } from '@/lib/aether-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -170,7 +170,7 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
             <span className="hidden sm:inline">Text</span>
           </TabsTrigger>
           <TabsTrigger value="link" className="gap-1.5">
-            <LinkIcon className="size-4" />
+            <Link2 className="size-4" />
             <span className="hidden sm:inline">Link</span>
           </TabsTrigger>
           <TabsTrigger value="image" className="gap-1.5">
@@ -230,7 +230,7 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
                 {isFetchingTitle ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <LinkIcon className="size-4" />
+                  <Link2 className="size-4" />
                 )}
               </Button>
             </div>

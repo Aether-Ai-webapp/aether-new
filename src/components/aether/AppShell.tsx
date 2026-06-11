@@ -68,7 +68,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={cn('min-h-dvh flex flex-col transition-theme', darkMode && 'dark')}>
-      <div className="flex flex-1 min-h-0">
+      {/* ── Ambient Blurs (Dark Mode) ──────────────────────────────── */}
+      {darkMode && (
+        <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-purple-700/10 rounded-full blur-[150px]" />
+          <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-indigo-700/10 rounded-full blur-[130px]" />
+        </div>
+      )}
+      <div className="relative z-10 flex flex-1 min-h-0">
         {/* Desktop Sidebar */}
         {!isMobile && (
           <motion.aside

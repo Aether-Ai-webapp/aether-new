@@ -44,3 +44,51 @@ Stage Summary:
 - Pending actions execute after successful auth
 - Supabase SQL schema ready for user to run in dashboard
 - Agent Browser crashes the dev server (sandbox resource limitation), verified via curl instead
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: EMERGENCY VISUAL OVERRIDE - Fix Icons, Dark Mode, & Add Insane Animations
+
+Work Log:
+- Updated `globals.css` dark mode variables:
+  - Background: #08070b (deep space, NOT gray)
+  - All foreground colors: rgba(255,255,255,0.9) — NO dark blue/black text
+  - Cards: bg-white/[0.03] — glassmorphic cards in dark mode
+  - Primary: #9333ea (purple-600) for consistent purple accent
+  - All borders/inputs: white with low opacity
+- Updated `AppShell.tsx`:
+  - Added two ambient blur orbs behind content in dark mode
+  - Top-left: w-[600px] h-[600px] bg-purple-700/10 blur-[150px]
+  - Bottom-right: w-[500px] h-[500px] bg-indigo-700/10 blur-[130px]
+  - All main content set to relative z-10
+- Updated `Dashboard.tsx` — complete visual overhaul:
+  - Replaced ALL emojis with Lucide icons (FileText, Link2, ImageIcon, Mic, Layers, etc.)
+  - Quick-add buttons: icon + label with colored backgrounds (purple/emerald/blue/pink)
+  - Gravity capture bar: bg-white/[0.02] border-white/[0.06] with purple glow shadow
+  - Focus-within: shadow expands to purple glow (shadow-[0_0_60px_-10px_rgba(139,92,246,0.4)])
+  - Input: bg-transparent text-white placeholder:text-white/25
+  - Save button: bg-purple-600 with purple glow shadow
+  - Greeting: motion.div with initial={{ opacity: 0, x: -20 }} (fade-in from left)
+  - Dashboard wrapper: motion.div with initial={{ opacity: 0, y: 15 }} (fade-in up)
+  - Quick-add buttons: motion.button with whileHover scale 1.05 + spring animation
+  - Collection cards: Lucide icons rendered via getCollectionIcon() + React.createElement
+  - Memory cards: dark mode glass cards with purple accents
+  - All text: text-white or text-white/opacity — NO dark blue/black
+  - Stats cards: dark mode bg-white/[0.03] with colored icons
+- Updated `Collections.tsx`:
+  - Added CollectionIcon helper (renders Lucide icon from emoji string)
+  - Added PresetIcon helper for icon selector (renders Lucide instead of emoji)
+  - Added 🎨 Design preset with Palette icon
+  - Collection cards show Lucide icons instead of emojis
+- Updated `AddMemorySheet.tsx`:
+  - Changed LinkIcon → Link2 for consistency
+- All changes pass ESLint cleanly
+
+Stage Summary:
+- Dark mode uses #08070b deep space background with ambient purple/indigo blurs
+- ALL emojis replaced with Lucide icons across Dashboard, Collections, AddMemorySheet
+- Gravity capture bar has purple glow on focus (Linear.app style)
+- Framer Motion: greeting slides in from left, dashboard fades up, quick-add buttons spring
+- All text is white/white-opacity in dark mode — no dark blue or black text
+- Lint passes cleanly
