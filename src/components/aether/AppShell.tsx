@@ -4,9 +4,8 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Home,
-  MessageCircle,
-  FolderOpen,
-  BookOpen,
+  Search,
+  Layers,
   Settings,
   Plus,
   Brain,
@@ -36,17 +35,15 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: Home },
-  { view: 'ask', label: 'Ask Aether', icon: MessageCircle },
-  { view: 'collections', label: 'Collections', icon: FolderOpen },
-  { view: 'memories', label: 'Memories', icon: BookOpen },
+  { view: 'ask', label: 'Ask Aether', icon: Search },
+  { view: 'collections', label: 'Collections', icon: Layers },
   { view: 'settings', label: 'Settings', icon: Settings },
 ]
 
 const mobileNavItems: { view: AppView; label: string; icon: React.ElementType }[] = [
   { view: 'dashboard', label: 'Home', icon: Home },
-  { view: 'ask', label: 'Ask', icon: MessageCircle },
-  { view: 'collections', label: 'Collections', icon: FolderOpen },
-  { view: 'memories', label: 'Memories', icon: BookOpen },
+  { view: 'ask', label: 'Ask', icon: Search },
+  { view: 'collections', label: 'Collections', icon: Layers },
   { view: 'settings', label: 'Settings', icon: Settings },
 ]
 
@@ -56,7 +53,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [addMemoryOpen, setAddMemoryOpen] = useState(false)
 
-  const sidebarWidth = sidebarExpanded ? 200 : 64
   const isDark = darkMode
 
   const handleAddMemory = () => {
@@ -74,23 +70,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {isDark && <AuroraBackground />}
 
       <div className="relative z-10 flex flex-1 min-h-0">
-        {/* ── Premium Glassmorphic Sidebar (Desktop) ──────────────── */}
+        {/* ── Minimal Glassmorphic Sidebar (Desktop) ──────────────── */}
         {!isMobile && (
-          <motion.aside
+          <aside
             className={cn(
-              'fixed left-0 top-0 bottom-0 z-40 flex flex-col transition-theme',
+              'h-screen fixed left-0 top-0 z-40 flex flex-col transition-all duration-300',
+              sidebarExpanded ? 'w-64' : 'w-20',
               isDark
                 ? 'bg-white/[0.02] backdrop-blur-2xl border-r border-white/[0.05]'
                 : 'bg-sidebar border-r border-border'
             )}
-            animate={{ width: sidebarWidth }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
             onMouseEnter={() => setSidebarExpanded(true)}
             onMouseLeave={() => setSidebarExpanded(false)}
           >
             {/* Logo + Auth Header */}
             <div className={cn(
-              'flex items-center justify-between gap-2 px-4 h-16 shrink-0',
+              'flex items-center justify-between gap-2 h-16 shrink-0',
+              sidebarExpanded ? 'px-4' : 'px-0 justify-center',
               isDark ? 'border-b border-white/[0.05]' : 'border-b border-border'
             )}>
               <div className="flex items-center gap-2 min-w-0">
@@ -98,10 +94,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <AnimatePresence>
                   {sidebarExpanded && (
                     <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      transition={{ duration: 0.15 }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
                       className={cn(
                         'text-2xl font-bold whitespace-nowrap overflow-hidden',
                         isDark
@@ -122,7 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.1 }}
+                    transition={{ duration: 0.15 }}
                     className="shrink-0"
                   >
                     {isAuthenticated ? (
@@ -157,8 +153,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 py-4 flex flex-col gap-1 px-2 overflow-y-auto">
+            {/* Navigation — 4 icons only */}
+            <nav className="flex-1 py-4 flex flex-col gap-1 px-2 overflow-y-auto items-center">
               <TooltipProvider delayDuration={0}>
                 {navItems.map((item) => {
                   const isActive = currentView === item.view
@@ -166,39 +162,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   return (
                     <Tooltip key={item.view}>
                       <TooltipTrigger asChild>
-                        <motion.div
-                          whileHover={{ x: 4 }}
-                          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                        <button
+                          onClick={() => setCurrentView(item.view)}
+                          className={cn(
+                            'flex items-center gap-3 rounded-xl p-3 text-sm font-medium transition-all duration-200 w-full',
+                            isDark
+                              ? isActive
+                                ? 'text-purple-400 bg-purple-500/10 shadow-[0_0_15px_-3px_rgba(139,92,246,0.3)]'
+                                : 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]'
+                              : isActive
+                                ? 'bg-primary text-primary-foreground shadow-sm'
+                                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          )}
                         >
-                          <button
-                            onClick={() => setCurrentView(item.view)}
-                            className={cn(
-                              'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 w-full',
-                              isDark
-                                ? isActive
-                                  ? 'text-purple-400 bg-purple-500/10 shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]'
-                                  : 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]'
-                                : isActive
-                                  ? 'bg-primary text-primary-foreground shadow-sm'
-                                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          <Icon className="w-5 h-5 shrink-0" />
+                          <AnimatePresence>
+                            {sidebarExpanded && (
+                              <motion.span
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="whitespace-nowrap overflow-hidden"
+                              >
+                                {item.label}
+                              </motion.span>
                             )}
-                          >
-                            <Icon className="w-5 h-5 shrink-0" />
-                            <AnimatePresence>
-                              {sidebarExpanded && (
-                                <motion.span
-                                  initial={{ opacity: 0, width: 0 }}
-                                  animate={{ opacity: 1, width: 'auto' }}
-                                  exit={{ opacity: 0, width: 0 }}
-                                  transition={{ duration: 0.15 }}
-                                  className="whitespace-nowrap overflow-hidden"
-                                >
-                                  {item.label}
-                                </motion.span>
-                              )}
-                            </AnimatePresence>
-                          </button>
-                        </motion.div>
+                          </AnimatePresence>
+                        </button>
                       </TooltipTrigger>
                       {!sidebarExpanded && (
                         <TooltipContent side="right" className="font-medium">
@@ -228,10 +219,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <AnimatePresence>
                   {sidebarExpanded && (
                     <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      transition={{ duration: 0.15 }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
                       className="whitespace-nowrap overflow-hidden"
                     >
                       Add Memory
@@ -240,14 +231,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </AnimatePresence>
               </Button>
             </div>
-          </motion.aside>
+          </aside>
         )}
 
-        {/* Main Content Area */}
+        {/* ── Main Content Area ────────────────────────────────────── */}
         <main
           className={cn(
-            'flex-1 flex flex-col min-h-0 transition-all duration-200',
-            !isMobile && 'ml-[64px]'
+            'flex-1 flex flex-col min-h-0 transition-all duration-300',
+            !isMobile && (sidebarExpanded ? 'ml-64' : 'ml-20')
           )}
         >
           {/* Top auth bar on mobile */}
@@ -316,7 +307,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* ── Premium Mobile Bottom Navigation ──────────────────────── */}
+      {/* ── Mobile Bottom Navigation ──────────────────────────────── */}
       {isMobile && (
         <nav className={cn(
           'fixed bottom-0 left-0 right-0 z-40 safe-area-bottom transition-theme',

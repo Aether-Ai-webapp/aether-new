@@ -25,6 +25,7 @@ import {
   Coffee,
   Code,
 } from 'lucide-react'
+// Note: FileText, Link2, ImageIcon, Mic are still used in typeIconMap for memory cards
 import { useAetherStore, type Memory, type MemoryType, type Collection } from '@/lib/aether-store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -65,12 +66,7 @@ const typeIconMap: Record<MemoryType, React.ElementType> = {
   voice: Mic,
 }
 
-const typeLabelMap: Record<MemoryType, string> = {
-  text: 'Note',
-  link: 'Link',
-  image: 'Image',
-  voice: 'Voice',
-}
+
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface DashboardProps {
@@ -156,19 +152,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
     [memories]
   )
 
-  // ── Quick-add definitions with Lucide icons ────────────────────────
-  const quickAddItems: {
-    type: MemoryType
-    label: string
-    icon: React.ElementType
-    bg: string
-    iconColor: string
-  }[] = [
-    { type: 'text', label: 'Note', icon: FileText, bg: 'bg-purple-600/10 border-purple-500/20', iconColor: 'text-purple-400' },
-    { type: 'link', label: 'Link', icon: Link2, bg: 'bg-emerald-600/10 border-emerald-500/20', iconColor: 'text-emerald-400' },
-    { type: 'image', label: 'Image', icon: ImageIcon, bg: 'bg-blue-600/10 border-blue-500/20', iconColor: 'text-blue-400' },
-    { type: 'voice', label: 'Voice', icon: Mic, bg: 'bg-pink-600/10 border-pink-500/20', iconColor: 'text-pink-400' },
-  ]
+  
 
   // ── Stat cards ─────────────────────────────────────────────────────
   const statCards = [
@@ -227,7 +211,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
             isDark ? 'text-white' : 'text-foreground'
           )}
         >
-          {getGreeting()} ✨
+          {getGreeting()}
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, x: -20 }}
@@ -298,43 +282,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </div>
       </motion.section>
 
-      {/* ── Quick-Add Buttons with Lucide icons + Spring animations ── */}
-      <motion.section
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10"
-      >
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-1 px-1">
-          {quickAddItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <motion.button
-                key={item.type}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    requireAuth(() => onAddMemory?.(item.type))
-                  } else {
-                    onAddMemory?.(item.type)
-                  }
-                }}
-                className={cn(
-                  'flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium whitespace-nowrap border transition-colors',
-                  isDark
-                    ? `${item.bg} ${item.iconColor} hover:bg-white/[0.06]`
-                    : 'bg-white/80 border-border hover:bg-white hover:shadow-md'
-                )}
-              >
-                <Icon className="w-5 h-5" />
-                {item.label}
-              </motion.button>
-            )
-          })}
-        </div>
-      </motion.section>
+
 
       {/* ── Stats Cards ───────────────────────────────────────────── */}
       <motion.section
