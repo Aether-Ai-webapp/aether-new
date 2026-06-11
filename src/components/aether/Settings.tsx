@@ -20,6 +20,7 @@ import {
   MessageCircle,
   Shield,
   LogOut,
+  LogIn,
 } from 'lucide-react'
 import { useAetherStore } from '@/lib/aether-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -84,7 +85,7 @@ const planFeatures = [
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Settings() {
-  const { darkMode, toggleDarkMode, memories, collections, user, logout } = useAetherStore()
+  const { darkMode, toggleDarkMode, memories, collections, user, logout, isAuthenticated, setShowAuthModal } = useAetherStore()
   const [profile, setProfile] = useState({ name: user?.name || 'Aether User', email: user?.email || 'hello@aether.app' })
   const [editName, setEditName] = useState(profile.name)
   const [editEmail, setEditEmail] = useState(profile.email)
@@ -234,8 +235,8 @@ export function Settings() {
                 </DialogContent>
               </Dialog>
 
-              {/* Logout Button */}
-              {user && user.id !== 'local' && (
+              {/* Auth Button */}
+              {isAuthenticated ? (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -244,6 +245,16 @@ export function Settings() {
                 >
                   <LogOut className="size-3.5" />
                   <span className="hidden sm:inline">Sign Out</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                  onClick={() => setShowAuthModal(true)}
+                >
+                  <LogIn className="size-3.5" />
+                  <span className="hidden sm:inline">Sign In</span>
                 </Button>
               )}
             </div>

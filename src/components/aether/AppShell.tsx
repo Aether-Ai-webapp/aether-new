@@ -10,6 +10,8 @@ import {
   Settings,
   Plus,
   Brain,
+  LogIn,
+  LogOut,
 } from 'lucide-react'
 import { useAetherStore, type AppView } from '@/lib/aether-store'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -21,7 +23,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { AddMemorySheet } from '@/components/aether/AddMemorySheet'
+import { AuthModal } from '@/components/aether/AuthModal'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface NavItem {
   view: AppView
@@ -46,12 +50,21 @@ const mobileNavItems: { view: AppView; label: string; icon: React.ElementType }[
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { currentView, setCurrentView, darkMode } = useAetherStore()
+  const { currentView, setCurrentView, darkMode, isAuthenticated, user, setShowAuthModal, logout } = useAetherStore()
   const isMobile = useIsMobile()
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [addMemoryOpen, setAddMemoryOpen] = useState(false)
 
   const sidebarWidth = sidebarExpanded ? 200 : 64
+
+  const handleAddMemory = () => {
+    setAddMemoryOpen(true)
+  }
+
+  const handleSignOut = async () => {
+    await logout()
+    toast.success('Signed out')
+  }
 
   return (
     <div className={cn('min-h-dvh flex flex-col transition-theme', darkMode && 'dark')}>
@@ -65,20 +78,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onMouseEnter={() => setSidebarExpanded(true)}
             onMouseLeave={() => setSidebarExpanded(false)}
           >
-            {/* Logo */}
-            <div className="flex items-center gap-2 px-4 h-16 border-b border-border shrink-0">
-              <Brain className="size-6 text-primary shrink-0" />
+            {/* Logo + Auth Header */}
+            <div className="flex items-center justify-between gap-2 px-4 h-16 border-b border-border shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Brain className="size-6 text-primary shrink-0" />
+                <AnimatePresence>
+                  {sidebarExpanded && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="font-semibold text-foreground whitespace-nowrap overflow-hidden"
+                    >
+                      Aether
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Auth button in sidebar header */}
               <AnimatePresence>
                 {sidebarExpanded && (
-                  <motion.span
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="font-semibold text-foreground whitespace-nowrap overflow-hidden"
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.1 }}
+                    className="shrink-0"
                   >
-                    Aether
-                  </motion.span>
+                    {isAuthenticated ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                        onClick={handleSignOut}
+                      >
+                        <LogOut className="size-3" />
+                        Log Out
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                        onClick={() => setShowAuthModal(true)}
+                      >
+                        <LogIn className="size-3" />
+                        Sign In
+                      </Button>
+                    )}
+                  </motion.div>
                 )}
               </AnimatePresence>
             </div>
@@ -131,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* Add Memory Button */}
             <div className="p-3 border-t border-border shrink-0">
               <Button
-                onClick={() => setAddMemoryOpen(true)}
+                onClick={handleAddMemory}
                 className={cn(
                   'w-full gap-2 bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground hover:opacity-90 shadow-md',
                   sidebarExpanded ? 'justify-start px-3' : 'justify-center px-0'
@@ -164,6 +214,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             !isMobile && 'ml-[64px]'
           )}
         >
+          {/* Top auth bar on mobile */}
+          {isMobile && (
+            <div className="flex items-center justify-between px-4 h-12 border-b border-border bg-background shrink-0">
+              <div className="flex items-center gap-2">
+                <Brain className="size-5 text-primary" />
+                <span className="font-semibold text-sm text-foreground">Aether</span>
+              </div>
+              {isAuthenticated ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="size-3" />
+                  Log Out
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                  onClick={() => setShowAuthModal(true)}
+                >
+                  <LogIn className="size-3" />
+                  Sign In
+                </Button>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto">
             <AnimatePresence mode="wait">
               <motion.div
@@ -207,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Floating Add Button */}
             <button
-              onClick={() => setAddMemoryOpen(true)}
+              onClick={handleAddMemory}
               className="flex items-center justify-center size-12 -mt-6 rounded-full bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground shadow-lg hover:opacity-90 active:scale-95 transition-all"
             >
               <Plus className="size-6" />
@@ -243,6 +324,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         open={addMemoryOpen}
         onOpenChange={setAddMemoryOpen}
       />
+
+      {/* Auth Modal — global */}
+      <AuthModal />
     </div>
   )
 }

@@ -51,9 +51,11 @@ interface AetherState {
   // Auth
   user: AuthUser | null
   isAuthenticated: boolean
-  isAuthLoading: boolean
+  showAuthModal: boolean
+  pendingAction: (() => void) | null
   setUser: (user: AuthUser | null) => void
-  setAuthLoading: (loading: boolean) => void
+  setShowAuthModal: (show: boolean) => void
+  requireAuth: (action: () => void) => void
   login: (email: string, password: string) => Promise<boolean>
   signup: (email: string, password: string, name: string) => Promise<boolean>
   logout: () => Promise<void>
@@ -83,7 +85,7 @@ interface AetherState {
   darkMode: boolean
   toggleDarkMode: () => void
 
-  // Actions
+  // Data actions
   setMemories: (memories: Memory[]) => void
   setCollections: (collections: Collection[]) => void
   setLoading: (loading: boolean) => void
@@ -95,6 +97,8 @@ interface AetherState {
   addCollection: (collection: Collection) => void
   updateCollection: (id: string, updates: Partial<Collection>) => void
   deleteCollection: (id: string) => void
+  fetchMemories: () => Promise<void>
+  fetchCollections: () => Promise<void>
 }
 
 export const useAetherStore = create<AetherState>((set, get) => ({
@@ -102,12 +106,23 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   currentView: 'dashboard',
   setCurrentView: (view) => set({ currentView: view, selectedMemoryId: null, selectedCollectionId: null }),
 
-  // Auth
-  user: null,
+  // Auth — always start as "local" user, no auth gate
+  user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
   isAuthenticated: false,
-  isAuthLoading: true,
-  setUser: (user) => set({ user, isAuthenticated: !!user }),
-  setAuthLoading: (isAuthLoading) => set({ isAuthLoading }),
+  showAuthModal: false,
+  pendingAction: null,
+  setUser: (user) => set({ user, isAuthenticated: !!user && user.id !== 'local' }),
+  setShowAuthModal: (showAuthModal) => set({ showAuthModal }),
+
+  // The gate: if user is signed in, run action immediately. Otherwise, queue it and show modal.
+  requireAuth: (action) => {
+    const state = get()
+    if (state.isAuthenticated && state.user && state.user.id !== 'local') {
+      action()
+    } else {
+      set({ showAuthModal: true, pendingAction: action })
+    }
+  },
 
   login: async (email, password) => {
     try {
@@ -127,7 +142,14 @@ export const useAetherStore = create<AetherState>((set, get) => ({
             avatarUrl: data.user.user_metadata?.avatar_url || null,
           },
           isAuthenticated: true,
+          showAuthModal: false,
         })
+        // Execute any pending action that was queued
+        const pending = get().pendingAction
+        if (pending) {
+          pending()
+          set({ pendingAction: null })
+        }
         return true
       }
       return false
@@ -154,7 +176,13 @@ export const useAetherStore = create<AetherState>((set, get) => ({
             avatarUrl: null,
           },
           isAuthenticated: true,
+          showAuthModal: false,
         })
+        const pending = get().pendingAction
+        if (pending) {
+          pending()
+          set({ pendingAction: null })
+        }
         return true
       }
       return false
@@ -166,38 +194,30 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   logout: async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
-    } catch {
-      // Ignore
-    }
+    } catch { /* ignore */ }
     set({
-      user: null,
+      user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
       isAuthenticated: false,
-      memories: [],
-      collections: [],
       chatMessages: [],
     })
+    // Reload data as local user
+    get().fetchMemories()
+    get().fetchCollections()
   },
 
   checkSession: async () => {
-    set({ isAuthLoading: true })
     try {
       const res = await fetch('/api/auth/session')
       if (res.ok) {
         const data = await res.json()
         if (data.authenticated && data.user) {
           set({ user: data.user, isAuthenticated: true })
-        } else {
-          // No Supabase session, but allow local use
-          set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
+          return
         }
-      } else {
-        set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
       }
-    } catch {
-      // Allow offline/local use
-      set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
-    }
-    set({ isAuthLoading: false })
+    } catch { /* ignore */ }
+    // No Supabase session — stay as local user (not gated)
+    set({ isAuthenticated: false })
   },
 
   // Data
@@ -224,7 +244,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   darkMode: false,
   toggleDarkMode: () => set((s) => ({ darkMode: !s.darkMode })),
 
-  // Actions
+  // Data actions
   setMemories: (memories) => set({ memories }),
   setCollections: (collections) => set({ collections }),
   setLoading: (isLoading) => set({ isLoading }),
@@ -246,4 +266,26 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   deleteCollection: (id) => set((s) => ({
     collections: s.collections.filter((c) => c.id !== id),
   })),
+  fetchMemories: async () => {
+    try {
+      const res = await fetch('/api/memories')
+      if (res.ok) {
+        const memories = await res.json()
+        set({ memories })
+      }
+    } catch (e) {
+      console.error('Failed to fetch memories:', e)
+    }
+  },
+  fetchCollections: async () => {
+    try {
+      const res = await fetch('/api/collections')
+      if (res.ok) {
+        const collections = await res.json()
+        set({ collections })
+      }
+    } catch (e) {
+      console.error('Failed to fetch collections:', e)
+    }
+  },
 }))

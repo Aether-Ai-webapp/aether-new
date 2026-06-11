@@ -68,7 +68,7 @@ interface DashboardProps {
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Dashboard({ onAddMemory }: DashboardProps) {
-  const { memories, collections, setCurrentView } = useAetherStore()
+  const { memories, collections, setCurrentView, requireAuth, isAuthenticated } = useAetherStore()
 
   // ── Derived data ───────────────────────────────────────────────────
   const thisWeekCount = useMemo(
@@ -160,7 +160,13 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
           {quickAddItems.map((item) => (
             <button
               key={item.type}
-              onClick={() => onAddMemory?.(item.type)}
+              onClick={() => {
+                if (!isAuthenticated) {
+                  requireAuth(() => onAddMemory?.(item.type))
+                } else {
+                  onAddMemory?.(item.type)
+                }
+              }}
               className={cn(
                 'flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium whitespace-nowrap',
                 'transition-all duration-150 hover:shadow-md hover:scale-[1.03] active:scale-[0.97]',
@@ -246,7 +252,13 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                 variant="outline"
                 size="sm"
                 className="mt-4 gap-1.5"
-                onClick={() => onAddMemory?.('text')}
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    requireAuth(() => onAddMemory?.('text'))
+                  } else {
+                    onAddMemory?.('text')
+                  }
+                }}
               >
                 <FileText className="size-3.5" />
                 Add a note

@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 
 interface AddMemorySheetProps {
   open: boolean
@@ -32,6 +33,8 @@ interface AddMemorySheetProps {
 export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   const isMobile = useIsMobile()
   const addMemory = useAetherStore((s) => s.addMemory)
+  const requireAuth = useAetherStore((s) => s.requireAuth)
+  const isAuthenticated = useAetherStore((s) => s.isAuthenticated)
 
   // Text tab state
   const [title, setTitle] = useState('')
@@ -86,6 +89,53 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   }, [url])
 
   const handleSave = useCallback(async () => {
+    // Gate: if not authenticated, show auth modal and queue this save
+    if (!isAuthenticated) {
+      const type = activeTab as Memory['type']
+      let memoryTitle = ''
+      let memoryContent = ''
+      let sourceUrl: string | null = null
+
+      if (type === 'text') {
+        memoryTitle = title.trim() || 'Untitled Note'
+        memoryContent = content.trim()
+        if (!memoryContent) return
+      } else if (type === 'link') {
+        memoryTitle = linkTitle.trim() || url.trim() || 'Untitled Link'
+        memoryContent = url.trim()
+        sourceUrl = url.trim()
+        if (!sourceUrl) return
+      } else if (type === 'image') {
+        memoryTitle = title.trim() || 'Untitled Image'
+        memoryContent = content.trim()
+      } else if (type === 'voice') {
+        memoryTitle = title.trim() || 'Voice Note'
+        memoryContent = content.trim()
+      }
+
+      const savedType = type
+      const savedTitle = memoryTitle
+      const savedContent = memoryContent
+      const savedSourceUrl = sourceUrl
+
+      requireAuth(async () => {
+        try {
+          const res = await fetch('/api/memories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: savedType, title: savedTitle, content: savedContent, sourceUrl: savedSourceUrl }),
+          })
+          if (res.ok) {
+            const memory: Memory = await res.json()
+            addMemory(memory)
+            toast.success('Memory saved!')
+          }
+        } catch { /* ignore */ }
+      })
+      handleClose()
+      return
+    }
+
     setIsSaving(true)
 
     try {
