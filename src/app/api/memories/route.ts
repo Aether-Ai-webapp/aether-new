@@ -28,8 +28,53 @@ function autoGenerateTags(content: string, title: string): string[] {
 }
 
 // GET /api/memories - List all memories
+// When authenticated, try Supabase first; fall back to Prisma
 export async function GET() {
   try {
+    // Try Supabase first if user is authenticated
+    try {
+      const { createClient } = await import('@/lib/supabase/server')
+      const supabase = await createClient()
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+      if (!authError && user) {
+        const { data, error } = await supabase
+          .from('memories')
+          .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+
+        if (!error && data) {
+          const result = data.map((m: Record<string, unknown>) => ({
+            id: m.id,
+            type: m.type,
+            title: m.title,
+            content: m.content,
+            summary: m.summary,
+            tags: m.tags ? (m.tags as string).split(',').filter(Boolean) : [],
+            sourceUrl: m.source_url,
+            fileUrl: m.file_url,
+            imagePreview: m.image_preview,
+            isFavorite: m.is_favorite,
+            createdAt: m.created_at,
+            updatedAt: m.updated_at,
+            collections: (m.memory_collections as Record<string, Record<string, unknown>>[])?.map((mc: Record<string, unknown>) => ({
+              id: (mc.collections as Record<string, unknown>)?.id,
+              name: (mc.collections as Record<string, unknown>)?.name,
+              color: (mc.collections as Record<string, unknown>)?.color,
+              icon: (mc.collections as Record<string, unknown>)?.icon,
+            })) || [],
+          }))
+          return NextResponse.json(result)
+        }
+        // If Supabase query fails (tables don't exist), fall through to Prisma
+      }
+    } catch (supabaseErr) {
+      console.error('Supabase GET memories failed:', supabaseErr instanceof Error ? supabaseErr.message : 'Unknown error')
+      // Fall through to Prisma
+    }
+
+    // Fallback: Prisma
     const memories = await db.memory.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
@@ -72,6 +117,7 @@ export async function GET() {
 }
 
 // POST /api/memories - Create a new memory with auto-tagging
+// When authenticated, try Supabase first; fall back to Prisma
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -90,6 +136,65 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Try Supabase first if user is authenticated
+    try {
+      const { createClient } = await import('@/lib/supabase/server')
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (user) {
+        const { data: memoryRow, error } = await supabase
+          .from('memories')
+          .insert({
+            user_id: user.id,
+            type: type || 'text',
+            title: title || '',
+            content: content || '',
+            source_url: sourceUrl || null,
+            tags: finalTags ? (Array.isArray(finalTags) ? finalTags.join(',') : finalTags) : '',
+          })
+          .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+          .single()
+
+        if (!error && memoryRow) {
+          const m = memoryRow as Record<string, unknown>
+
+          // If collectionIds provided, create junction rows
+          if (collectionIds?.length) {
+            await supabase.from('memory_collections').insert(
+              collectionIds.map((cid: string) => ({
+                memory_id: m.id,
+                collection_id: cid,
+              }))
+            )
+          }
+
+          return NextResponse.json(
+            {
+              id: m.id,
+              type: m.type,
+              title: m.title,
+              content: m.content,
+              summary: m.summary,
+              tags: m.tags ? (m.tags as string).split(',').filter(Boolean) : [],
+              sourceUrl: m.source_url,
+              fileUrl: m.file_url,
+              imagePreview: m.image_preview,
+              isFavorite: m.is_favorite,
+              createdAt: m.created_at,
+              updatedAt: m.updated_at,
+              collections: [],
+            },
+            { status: 201 }
+          )
+        }
+        // If Supabase insert fails (tables don't exist), fall through to Prisma
+      }
+    } catch {
+      // Fall through to Prisma
+    }
+
+    // Fallback: Prisma
     const memory = await db.memory.create({
       data: {
         type: type || 'text',

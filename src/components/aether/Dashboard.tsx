@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { formatDistanceToNow, format, isToday, isThisWeek } from 'date-fns'
+import { formatDistanceToNow, format, isThisWeek } from 'date-fns'
 import {
   BookOpen,
   FolderOpen,
@@ -14,12 +14,16 @@ import {
   Mic,
   ArrowRight,
   Sparkles,
+  Send,
+  Loader2,
 } from 'lucide-react'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 // ─── Animation variants ────────────────────────────────────────────
 const containerVariants = {
@@ -68,7 +72,59 @@ interface DashboardProps {
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Dashboard({ onAddMemory }: DashboardProps) {
-  const { memories, collections, setCurrentView, requireAuth, isAuthenticated } = useAetherStore()
+  const { memories, collections, setCurrentView, requireAuth, isAuthenticated, saveMemory } = useAetherStore()
+
+  // ── Capture bar state ──────────────────────────────────────────────
+  const [captureText, setCaptureText] = useState('')
+  const [isCapturing, setIsCapturing] = useState(false)
+
+  const handleCapture = useCallback(async () => {
+    const text = captureText.trim()
+    if (!text) return
+
+    // Gate: if not authenticated, show auth modal and queue this save
+    if (!isAuthenticated) {
+      const savedText = text
+      requireAuth(async () => {
+        const result = await saveMemory({
+          type: 'text',
+          title: savedText.split('\n')[0].slice(0, 80) || 'Quick Note',
+          content: savedText,
+        })
+        if (result) {
+          toast.success('Memory saved!')
+        }
+      })
+      setCaptureText('')
+      return
+    }
+
+    setIsCapturing(true)
+    try {
+      const result = await saveMemory({
+        type: 'text',
+        title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
+        content: text,
+      })
+      if (result) {
+        setCaptureText('')
+        toast.success('Memory saved!')
+      } else {
+        toast.error('Failed to save memory')
+      }
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setIsCapturing(false)
+    }
+  }, [captureText, isAuthenticated, requireAuth, saveMemory])
+
+  const handleCaptureKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleCapture()
+    }
+  }, [handleCapture])
 
   // ── Derived data ───────────────────────────────────────────────────
   const thisWeekCount = useMemo(
@@ -152,6 +208,39 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </h1>
         <p className="text-lg text-muted-foreground">What&apos;s on your mind?</p>
         <p className="text-sm text-muted-foreground/70">{getFormattedDate()}</p>
+      </motion.section>
+
+      {/* ── Capture Bar ───────────────────────────────────────────── */}
+      <motion.section variants={itemVariants}>
+        <div className="relative">
+          <Input
+            value={captureText}
+            onChange={(e) => setCaptureText(e.target.value)}
+            onKeyDown={handleCaptureKeyDown}
+            placeholder="Capture a thought... press Enter to save"
+            disabled={isCapturing}
+            className="h-12 pl-4 pr-12 rounded-xl text-sm border-border
+              bg-white shadow-sm
+              focus-visible:ring-primary/30 focus-visible:border-primary/50
+              placeholder:text-muted-foreground/60"
+          />
+          <button
+            onClick={handleCapture}
+            disabled={!captureText.trim() || isCapturing}
+            className={cn(
+              'absolute right-2 top-1/2 -translate-y-1/2 size-8 rounded-lg flex items-center justify-center transition-all',
+              captureText.trim()
+                ? 'bg-gradient-to-r from-primary to-[#8B6F9A] text-white shadow-md hover:opacity-90 active:scale-95'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            {isCapturing ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Send className="size-4" />
+            )}
+          </button>
+        </div>
       </motion.section>
 
       {/* ── Quick-Add Buttons ─────────────────────────────────────── */}
@@ -246,23 +335,8 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                 No memories yet
               </p>
               <p className="text-xs text-muted-foreground mt-1 max-w-[240px]">
-                Start by adding your first memory!
+                Start by typing in the capture bar above!
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-4 gap-1.5"
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    requireAuth(() => onAddMemory?.('text'))
-                  } else {
-                    onAddMemory?.('text')
-                  }
-                }}
-              >
-                <FileText className="size-3.5" />
-                Add a note
-              </Button>
             </CardContent>
           </Card>
         ) : (

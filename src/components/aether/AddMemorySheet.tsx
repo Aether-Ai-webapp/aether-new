@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react'
 import { FileText, LinkIcon, ImageIcon, Mic, Loader2 } from 'lucide-react'
-import { useAetherStore, type Memory } from '@/lib/aether-store'
+import { useAetherStore, type MemoryType } from '@/lib/aether-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
   Sheet,
@@ -32,7 +32,7 @@ interface AddMemorySheetProps {
 
 export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   const isMobile = useIsMobile()
-  const addMemory = useAetherStore((s) => s.addMemory)
+  const saveMemory = useAetherStore((s) => s.saveMemory)
   const requireAuth = useAetherStore((s) => s.requireAuth)
   const isAuthenticated = useAetherStore((s) => s.isAuthenticated)
 
@@ -61,7 +61,6 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
 
   const handleClose = useCallback(() => {
     onOpenChange(false)
-    // Delay reset so the close animation plays
     setTimeout(resetForm, 300)
   }, [onOpenChange, resetForm])
 
@@ -89,106 +88,71 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   }, [url])
 
   const handleSave = useCallback(async () => {
+    const type = activeTab as MemoryType
+    let memoryTitle = ''
+    let memoryContent = ''
+    let sourceUrl: string | null = null
+
+    if (type === 'text') {
+      memoryTitle = title.trim() || 'Untitled Note'
+      memoryContent = content.trim()
+      if (!memoryContent) return
+    } else if (type === 'link') {
+      memoryTitle = linkTitle.trim() || url.trim() || 'Untitled Link'
+      memoryContent = url.trim()
+      sourceUrl = url.trim()
+      if (!sourceUrl) return
+    } else if (type === 'image') {
+      memoryTitle = title.trim() || 'Untitled Image'
+      memoryContent = content.trim()
+    } else if (type === 'voice') {
+      memoryTitle = title.trim() || 'Voice Note'
+      memoryContent = content.trim()
+    }
+
     // Gate: if not authenticated, show auth modal and queue this save
     if (!isAuthenticated) {
-      const type = activeTab as Memory['type']
-      let memoryTitle = ''
-      let memoryContent = ''
-      let sourceUrl: string | null = null
-
-      if (type === 'text') {
-        memoryTitle = title.trim() || 'Untitled Note'
-        memoryContent = content.trim()
-        if (!memoryContent) return
-      } else if (type === 'link') {
-        memoryTitle = linkTitle.trim() || url.trim() || 'Untitled Link'
-        memoryContent = url.trim()
-        sourceUrl = url.trim()
-        if (!sourceUrl) return
-      } else if (type === 'image') {
-        memoryTitle = title.trim() || 'Untitled Image'
-        memoryContent = content.trim()
-      } else if (type === 'voice') {
-        memoryTitle = title.trim() || 'Voice Note'
-        memoryContent = content.trim()
-      }
-
       const savedType = type
       const savedTitle = memoryTitle
       const savedContent = memoryContent
       const savedSourceUrl = sourceUrl
 
       requireAuth(async () => {
-        try {
-          const res = await fetch('/api/memories', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: savedType, title: savedTitle, content: savedContent, sourceUrl: savedSourceUrl }),
-          })
-          if (res.ok) {
-            const memory: Memory = await res.json()
-            addMemory(memory)
-            toast.success('Memory saved!')
-          }
-        } catch { /* ignore */ }
+        const result = await saveMemory({
+          type: savedType,
+          title: savedTitle,
+          content: savedContent,
+          sourceUrl: savedSourceUrl,
+        })
+        if (result) {
+          toast.success('Memory saved!')
+        }
       })
       handleClose()
       return
     }
 
+    // Authenticated: save directly
     setIsSaving(true)
-
     try {
-      const type = activeTab as Memory['type']
-      let memoryTitle = ''
-      let memoryContent = ''
-      let sourceUrl: string | null = null
-
-      if (type === 'text') {
-        memoryTitle = title.trim() || 'Untitled Note'
-        memoryContent = content.trim()
-        if (!memoryContent) {
-          setIsSaving(false)
-          return
-        }
-      } else if (type === 'link') {
-        memoryTitle = linkTitle.trim() || url.trim() || 'Untitled Link'
-        memoryContent = url.trim()
-        sourceUrl = url.trim()
-        if (!sourceUrl) {
-          setIsSaving(false)
-          return
-        }
-      } else if (type === 'image') {
-        memoryTitle = title.trim() || 'Untitled Image'
-        memoryContent = content.trim()
-      } else if (type === 'voice') {
-        memoryTitle = title.trim() || 'Voice Note'
-        memoryContent = content.trim()
-      }
-
-      const res = await fetch('/api/memories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          title: memoryTitle,
-          content: memoryContent,
-          sourceUrl,
-        }),
+      const result = await saveMemory({
+        type,
+        title: memoryTitle,
+        content: memoryContent,
+        sourceUrl,
       })
-
-      if (res.ok) {
-        const memory: Memory = await res.json()
-        addMemory(memory)
+      if (result) {
         handleClose()
+        toast.success('Memory saved!')
+      } else {
+        toast.error('Failed to save memory')
       }
     } catch {
-      // Handle error silently for now
+      toast.error('Something went wrong')
     } finally {
       setIsSaving(false)
     }
-  }, [activeTab, title, content, linkTitle, url, addMemory, handleClose])
+  }, [activeTab, title, content, linkTitle, url, isAuthenticated, requireAuth, saveMemory, handleClose])
 
   const isSaveDisabled = () => {
     if (isSaving) return true

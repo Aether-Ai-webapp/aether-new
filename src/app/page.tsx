@@ -25,16 +25,13 @@ function ViewRouter() {
 }
 
 function DataLoader({ children }: { children: React.ReactNode }) {
-  const { fetchMemories, fetchCollections, setLoading } = useAetherStore()
+  const { fetchMemories, fetchCollections } = useAetherStore()
 
   useEffect(() => {
-    async function loadData() {
-      setLoading(true)
-      await Promise.all([fetchMemories(), fetchCollections()])
-      setLoading(false)
-    }
-    loadData()
-  }, [fetchMemories, fetchCollections, setLoading])
+    // Fire and forget — UI renders immediately, data loads in background
+    fetchMemories()
+    fetchCollections()
+  }, [fetchMemories, fetchCollections])
 
   return <>{children}</>
 }
@@ -43,6 +40,7 @@ export default function Home() {
   const { checkSession } = useAetherStore()
 
   useEffect(() => {
+    // Check auth session on mount — UI is already visible
     checkSession()
   }, [checkSession])
 

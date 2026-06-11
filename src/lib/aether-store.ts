@@ -15,7 +15,7 @@ export interface Memory {
   isFavorite: boolean
   createdAt: string
   updatedAt: string
-  collections: { id: string; name: string; color: string }[]
+  collections: { id: string; name: string; color: string; icon?: string }[]
 }
 
 export interface Collection {
@@ -43,6 +43,100 @@ export interface AuthUser {
   avatarUrl: string | null
 }
 
+// ─── Supabase row mappers ────────────────────────────────────────────
+interface SupabaseMemoryRow {
+  id: string
+  user_id: string
+  type: string
+  title: string
+  content: string
+  summary: string | null
+  tags: string
+  source_url: string | null
+  file_url: string | null
+  image_preview: string | null
+  is_favorite: boolean
+  created_at: string
+  updated_at: string
+  memory_collections?: { collection_id: string; collections: { id: string; name: string; color: string; icon: string } }[]
+}
+
+interface SupabaseCollectionRow {
+  id: string
+  user_id: string
+  name: string
+  icon: string
+  color: string
+  created_at: string
+  memory_collections?: { id: string }[]
+}
+
+function mapSupabaseMemory(row: SupabaseMemoryRow): Memory {
+  return {
+    id: row.id,
+    type: (row.type as MemoryType) || 'text',
+    title: row.title || '',
+    content: row.content || '',
+    summary: row.summary,
+    tags: row.tags ? row.tags.split(',').filter(Boolean) : [],
+    sourceUrl: row.source_url,
+    fileUrl: row.file_url,
+    imagePreview: row.image_preview,
+    isFavorite: row.is_favorite || false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    collections: row.memory_collections?.map((mc) => ({
+      id: mc.collections.id,
+      name: mc.collections.name,
+      color: mc.collections.color,
+      icon: mc.collections.icon,
+    })) || [],
+  }
+}
+
+function mapSupabaseCollection(row: SupabaseCollectionRow): Collection {
+  return {
+    id: row.id,
+    name: row.name,
+    icon: row.icon || '📁',
+    color: row.color || '#6D597A',
+    createdAt: row.created_at,
+    memoryCount: row.memory_collections?.length || 0,
+  }
+}
+
+// ─── Keyword-based auto-tagging ──────────────────────────────────────
+function autoGenerateTags(content: string, title: string): string[] {
+  const text = `${title} ${content}`.toLowerCase()
+  const tagMap: Record<string, string[]> = {
+    'work': ['meeting', 'project', 'deadline', 'client', 'office', 'team', 'q1', 'q2', 'q3', 'q4', 'quarterly', 'strategy'],
+    'personal': ['routine', 'morning', 'exercise', 'meditation', 'journal', 'habit'],
+    'travel': ['trip', 'itinerary', 'flight', 'hotel', 'visit', 'tokyo', 'paris', 'destination'],
+    'learning': ['learn', 'study', 'course', 'tutorial', 'book', 'read', 'article'],
+    'code': ['code', 'programming', 'react', 'javascript', 'typescript', 'api', 'bug', 'feature', 'css', 'html', 'framework'],
+    'design': ['design', 'ui', 'ux', 'layout', 'color', 'font', 'figma', 'wireframe'],
+    'ai': ['ai', 'machine learning', 'neural', 'model', 'gpt', 'gemini', 'llm', 'chatbot'],
+    'recipe': ['recipe', 'cook', 'bake', 'ingredient', 'food', 'meal', 'breakfast', 'dinner'],
+    'idea': ['idea', 'concept', 'brainstorm', 'innovative', 'startup', 'prototype'],
+    'finance': ['budget', 'expense', 'invest', 'savings', 'money', 'cost'],
+  }
+
+  const tags: string[] = []
+  for (const [tag, keywords] of Object.entries(tagMap)) {
+    if (keywords.some(kw => text.includes(kw))) {
+      tags.push(tag)
+    }
+  }
+  return tags.slice(0, 5)
+}
+
+// ─── Supabase browser client helper ──────────────────────────────────
+async function getSupabaseBrowser() {
+  const { createClient } = await import('@/lib/supabase/browser')
+  return createClient()
+}
+
+// ─── Store ───────────────────────────────────────────────────────────
 interface AetherState {
   // Navigation
   currentView: AppView
@@ -53,6 +147,7 @@ interface AetherState {
   isAuthenticated: boolean
   showAuthModal: boolean
   pendingAction: (() => void) | null
+  supabaseReady: boolean // true when Supabase tables exist for this user
   setUser: (user: AuthUser | null) => void
   setShowAuthModal: (show: boolean) => void
   requireAuth: (action: () => void) => void
@@ -60,6 +155,7 @@ interface AetherState {
   signup: (email: string, password: string, name: string) => Promise<boolean>
   logout: () => Promise<void>
   checkSession: () => Promise<void>
+  checkSupabaseTables: () => Promise<boolean>
 
   // Data
   memories: Memory[]
@@ -99,6 +195,10 @@ interface AetherState {
   deleteCollection: (id: string) => void
   fetchMemories: () => Promise<void>
   fetchCollections: () => Promise<void>
+
+  // Supabase-aware save
+  saveMemory: (data: { type: MemoryType; title: string; content: string; sourceUrl?: string | null; tags?: string[]; collectionIds?: string[] }) => Promise<Memory | null>
+  saveCollection: (data: { name: string; color?: string; icon?: string }) => Promise<Collection | null>
 }
 
 export const useAetherStore = create<AetherState>((set, get) => ({
@@ -106,11 +206,12 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   currentView: 'dashboard',
   setCurrentView: (view) => set({ currentView: view, selectedMemoryId: null, selectedCollectionId: null }),
 
-  // Auth — always start as "local" user, no auth gate
+  // Auth — start as "local" user, no auth gate
   user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
   isAuthenticated: false,
   showAuthModal: false,
   pendingAction: null,
+  supabaseReady: false,
   setUser: (user) => set({ user, isAuthenticated: !!user && user.id !== 'local' }),
   setShowAuthModal: (showAuthModal) => set({ showAuthModal }),
 
@@ -144,12 +245,17 @@ export const useAetherStore = create<AetherState>((set, get) => ({
           isAuthenticated: true,
           showAuthModal: false,
         })
+        // Check if Supabase tables exist
+        get().checkSupabaseTables()
         // Execute any pending action that was queued
         const pending = get().pendingAction
         if (pending) {
           pending()
           set({ pendingAction: null })
         }
+        // Re-fetch data from Supabase
+        get().fetchMemories()
+        get().fetchCollections()
         return true
       }
       return false
@@ -178,6 +284,9 @@ export const useAetherStore = create<AetherState>((set, get) => ({
           isAuthenticated: true,
           showAuthModal: false,
         })
+        // Check if Supabase tables exist
+        get().checkSupabaseTables()
+        // Execute any pending action
         const pending = get().pendingAction
         if (pending) {
           pending()
@@ -198,6 +307,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     set({
       user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
       isAuthenticated: false,
+      supabaseReady: false,
       chatMessages: [],
     })
     // Reload data as local user
@@ -212,12 +322,40 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         const data = await res.json()
         if (data.authenticated && data.user) {
           set({ user: data.user, isAuthenticated: true })
+          // Check Supabase tables + fetch data
+          get().checkSupabaseTables()
           return
         }
       }
     } catch { /* ignore */ }
     // No Supabase session — stay as local user (not gated)
     set({ isAuthenticated: false })
+  },
+
+  // Check if Supabase tables exist for the current user
+  checkSupabaseTables: async () => {
+    try {
+      const supabase = await getSupabaseBrowser()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        set({ supabaseReady: false })
+        return false
+      }
+
+      // Try a minimal query to see if the memories table exists
+      const { error } = await supabase
+        .from('memories')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .limit(1)
+
+      const ready = !error
+      set({ supabaseReady: ready })
+      return ready
+    } catch {
+      set({ supabaseReady: false })
+      return false
+    }
   },
 
   // Data
@@ -266,7 +404,33 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   deleteCollection: (id) => set((s) => ({
     collections: s.collections.filter((c) => c.id !== id),
   })),
+
+  // ── Fetch Memories ──────────────────────────────────────────────────
   fetchMemories: async () => {
+    const state = get()
+    if (state.isAuthenticated && state.supabaseReady) {
+      try {
+        const supabase = await getSupabaseBrowser()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) throw new Error('No session')
+
+        const { data, error } = await supabase
+          .from('memories')
+          .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+
+        const memories = (data as SupabaseMemoryRow[]).map(mapSupabaseMemory)
+        set({ memories })
+        return
+      } catch {
+        // Fall through to Prisma API
+      }
+    }
+
+    // Fallback: fetch from Prisma API
     try {
       const res = await fetch('/api/memories')
       if (res.ok) {
@@ -277,7 +441,33 @@ export const useAetherStore = create<AetherState>((set, get) => ({
       console.error('Failed to fetch memories:', e)
     }
   },
+
+  // ── Fetch Collections ───────────────────────────────────────────────
   fetchCollections: async () => {
+    const state = get()
+    if (state.isAuthenticated && state.supabaseReady) {
+      try {
+        const supabase = await getSupabaseBrowser()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) throw new Error('No session')
+
+        const { data, error } = await supabase
+          .from('collections')
+          .select('*, memory_collections(id)')
+          .eq('user_id', session.user.id)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+
+        const collections = (data as SupabaseCollectionRow[]).map(mapSupabaseCollection)
+        set({ collections })
+        return
+      } catch {
+        // Fall through to Prisma API
+      }
+    }
+
+    // Fallback: fetch from Prisma API
     try {
       const res = await fetch('/api/collections')
       if (res.ok) {
@@ -287,5 +477,135 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     } catch (e) {
       console.error('Failed to fetch collections:', e)
     }
+  },
+
+  // ── Save Memory (Supabase-aware) ────────────────────────────────────
+  saveMemory: async (data) => {
+    const state = get()
+    const { type, title, content, sourceUrl, tags, collectionIds } = data
+
+    // Auto-generate tags if not provided
+    let finalTags = tags
+    if ((!tags || tags.length === 0) && content?.trim()) {
+      const autoTags = autoGenerateTags(content, title || '')
+      if (autoTags.length > 0) finalTags = autoTags
+    }
+
+    // ── Authenticated + Supabase ready: save to Supabase directly ──
+    if (state.isAuthenticated && state.supabaseReady) {
+      try {
+        const supabase = await getSupabaseBrowser()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) throw new Error('No session')
+
+        const { data: memoryRow, error } = await supabase
+          .from('memories')
+          .insert({
+            user_id: session.user.id,
+            type: type || 'text',
+            title: title || '',
+            content: content || '',
+            source_url: sourceUrl || null,
+            tags: finalTags ? (Array.isArray(finalTags) ? finalTags.join(',') : finalTags) : '',
+          })
+          .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+          .single()
+
+        if (error) throw error
+
+        const memory = mapSupabaseMemory(memoryRow as SupabaseMemoryRow)
+
+        // If collectionIds provided, create junction rows
+        if (collectionIds?.length) {
+          await supabase.from('memory_collections').insert(
+            collectionIds.map((cid: string) => ({
+              memory_id: memory.id,
+              collection_id: cid,
+            }))
+          )
+        }
+
+        // Optimistic UI: add to store
+        get().addMemory(memory)
+        return memory
+      } catch {
+        // Fall through to Prisma API
+      }
+    }
+
+    // ── Fallback: save via Prisma API ──
+    try {
+      const res = await fetch('/api/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          title,
+          content,
+          sourceUrl,
+          tags: finalTags,
+          collectionIds,
+        }),
+      })
+      if (res.ok) {
+        const memory: Memory = await res.json()
+        get().addMemory(memory)
+        return memory
+      }
+    } catch {
+      // Silent fail
+    }
+    return null
+  },
+
+  // ── Save Collection (Supabase-aware) ────────────────────────────────
+  saveCollection: async (data) => {
+    const state = get()
+    const { name, color, icon } = data
+
+    // ── Authenticated + Supabase ready: save to Supabase directly ──
+    if (state.isAuthenticated && state.supabaseReady) {
+      try {
+        const supabase = await getSupabaseBrowser()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) throw new Error('No session')
+
+        const { data: collectionRow, error } = await supabase
+          .from('collections')
+          .insert({
+            user_id: session.user.id,
+            name: name.trim(),
+            color: color || '#6D597A',
+            icon: icon || '📁',
+          })
+          .select('*, memory_collections(id)')
+          .single()
+
+        if (error) throw error
+
+        const collection = mapSupabaseCollection(collectionRow as SupabaseCollectionRow)
+        get().addCollection(collection)
+        return collection
+      } catch {
+        // Fall through to Prisma API
+      }
+    }
+
+    // ── Fallback: save via Prisma API ──
+    try {
+      const res = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), color: color || '#6D597A', icon: icon || '📁' }),
+      })
+      if (res.ok) {
+        const collection: Collection = await res.json()
+        get().addCollection(collection)
+        return collection
+      }
+    } catch {
+      // Silent fail
+    }
+    return null
   },
 }))

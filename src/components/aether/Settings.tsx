@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import {
   User,
@@ -16,11 +16,14 @@ import {
   X,
   Sparkles,
   Brain,
-  BookOpen,
-  MessageCircle,
-  Shield,
   LogOut,
   LogIn,
+  Cloud,
+  CloudOff,
+  Copy,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react'
 import { useAetherStore } from '@/lib/aether-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -85,11 +88,53 @@ const planFeatures = [
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Settings() {
-  const { darkMode, toggleDarkMode, memories, collections, user, logout, isAuthenticated, setShowAuthModal } = useAetherStore()
+  const { darkMode, toggleDarkMode, memories, collections, user, logout, isAuthenticated, setShowAuthModal, supabaseReady } = useAetherStore()
   const [profile, setProfile] = useState({ name: user?.name || 'Aether User', email: user?.email || 'hello@aether.app' })
   const [editName, setEditName] = useState(profile.name)
   const [editEmail, setEditEmail] = useState(profile.email)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+
+  // ── Supabase setup state ────────────────────────────────────────
+  const [checkingSetup, setCheckingSetup] = useState(false)
+  const [sqlCopied, setSqlCopied] = useState(false)
+
+  // Derive setup status from store state
+  const effectiveSetupStatus = useMemo(() => {
+    if (!isAuthenticated) return 'idle' as const
+    if (supabaseReady) return 'ready' as const
+    if (checkingSetup) return 'checking' as const
+    return 'not-setup' as const
+  }, [isAuthenticated, supabaseReady, checkingSetup])
+
+  const checkSetup = async () => {
+    setCheckingSetup(true)
+    try {
+      const res = await fetch('/api/setup/supabase')
+      const data = await res.json()
+      if (data.tablesExist) {
+        // Update store - the store already tracks supabaseReady
+        useAetherStore.setState({ supabaseReady: true })
+      }
+    } catch {
+      // Error case - already reflected in effectiveSetupStatus
+    }
+    setCheckingSetup(false)
+  }
+
+  const copySqlToClipboard = async () => {
+    try {
+      const res = await fetch('/api/setup/sql')
+      if (res.ok) {
+        const { sql } = await res.json()
+        await navigator.clipboard.writeText(sql)
+        setSqlCopied(true)
+        toast.success('SQL copied to clipboard!')
+        setTimeout(() => setSqlCopied(false), 2000)
+      }
+    } catch {
+      toast.error('Failed to copy SQL')
+    }
+  }
 
   // Sync dark mode class on <html>
   useEffect(() => {
@@ -262,7 +307,84 @@ export function Settings() {
         </Card>
       </motion.div>
 
-      {/* ── 2. Appearance Section ──────────────────────────────────── */}
+      {/* ── 2. Cloud Sync (Supabase) Section ────────────────────────── */}
+      {isAuthenticated && (
+        <motion.div variants={itemVariants}>
+          <Card className="border-0 shadow-sm bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                {effectiveSetupStatus === 'ready' ? (
+                  <Cloud className="size-4 text-[#81B29A]" />
+                ) : (
+                  <CloudOff className="size-4 text-[#E07A5F]" />
+                )}
+                Cloud Sync
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-4">
+              {effectiveSetupStatus === 'ready' ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-[#81B29A]/10">
+                  <CheckCircle2 className="size-5 text-[#81B29A] shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Connected to Supabase</p>
+                    <p className="text-xs text-muted-foreground">Your memories sync across devices.</p>
+                  </div>
+                </div>
+              ) : effectiveSetupStatus === 'not-setup' || effectiveSetupStatus === 'error' ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#E07A5F]/10">
+                    <AlertCircle className="size-5 text-[#E07A5F] shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Database tables not found</p>
+                      <p className="text-xs text-muted-foreground">Run the setup SQL in your Supabase dashboard to enable cloud sync.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={copySqlToClipboard}
+                    >
+                      {sqlCopied ? (
+                        <CheckCircle2 className="size-3.5 text-[#81B29A]" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                      {sqlCopied ? 'Copied!' : 'Copy Setup SQL'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => window.open('https://supabase.com/dashboard/project/kzjntvjzjhbodehuqxbf/sql', '_blank')}
+                    >
+                      <ExternalLink className="size-3.5" />
+                      Open SQL Editor
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={checkSetup}
+                    >
+                      <Check className="size-3.5" />
+                      Re-check
+                    </Button>
+                  </div>
+                </div>
+              ) : effectiveSetupStatus === 'checking' ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-muted">
+                  <Cloud className="size-5 text-muted-foreground shrink-0 animate-pulse" />
+                  <p className="text-sm text-muted-foreground">Checking database connection...</p>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* ── 3. Appearance Section ──────────────────────────────────── */}
       <motion.div variants={itemVariants}>
         <Card className="border-0 shadow-sm bg-card">
           <CardHeader className="pb-3">
@@ -305,7 +427,7 @@ export function Settings() {
         </Card>
       </motion.div>
 
-      {/* ── 3. Plan Section ────────────────────────────────────────── */}
+      {/* ── 4. Plan Section ────────────────────────────────────────── */}
       <motion.div variants={itemVariants}>
         <Card className="border-0 shadow-sm bg-card">
           <CardHeader className="pb-3">
@@ -392,7 +514,7 @@ export function Settings() {
         </Card>
       </motion.div>
 
-      {/* ── 4. Data Section ────────────────────────────────────────── */}
+      {/* ── 5. Data Section ────────────────────────────────────────── */}
       <motion.div variants={itemVariants}>
         <Card className="border-0 shadow-sm bg-card">
           <CardHeader className="pb-3">
@@ -466,7 +588,7 @@ export function Settings() {
         </Card>
       </motion.div>
 
-      {/* ── 5. About Section ───────────────────────────────────────── */}
+      {/* ── 6. About Section ───────────────────────────────────────── */}
       <motion.div variants={itemVariants}>
         <Card className="border-0 shadow-sm bg-card">
           <CardHeader className="pb-3">
@@ -481,7 +603,7 @@ export function Settings() {
                 <Brain className="size-6" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground">Aether v0.2.0</p>
+                <p className="text-sm font-semibold text-foreground">Aether v0.3.0</p>
                 <p className="text-xs text-muted-foreground">Your personal memory companion</p>
               </div>
             </div>
@@ -491,11 +613,17 @@ export function Settings() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Version</span>
-                <span className="text-xs font-medium text-foreground">0.2.0</span>
+                <span className="text-xs font-medium text-foreground">0.3.0</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Build</span>
                 <span className="text-xs font-medium text-foreground">2025.03</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Cloud Sync</span>
+                <span className="text-xs font-medium text-foreground">
+                  {supabaseReady ? 'Connected' : isAuthenticated ? 'Setup Required' : 'Not Available'}
+                </span>
               </div>
             </div>
 
