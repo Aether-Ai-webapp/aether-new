@@ -199,6 +199,9 @@ interface AetherState {
   // Supabase-aware save
   saveMemory: (data: { type: MemoryType; title: string; content: string; sourceUrl?: string | null; tags?: string[]; collectionIds?: string[] }) => Promise<Memory | null>
   saveCollection: (data: { name: string; color?: string; icon?: string }) => Promise<Collection | null>
+
+  // Background AI auto-tagging (non-blocking)
+  backgroundAutoTag: (memoryId: string, content: string, title: string) => Promise<void>
 }
 
 export const useAetherStore = create<AetherState>((set, get) => ({
@@ -479,12 +482,62 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     }
   },
 
-  // ── Save Memory (Supabase-aware) ────────────────────────────────────
+  // ── Background AI auto-tagging (non-blocking) ──────────────────────
+  backgroundAutoTag: async (memoryId: string, content: string, title: string) => {
+    try {
+      const res = await fetch('/api/auto-tag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: `${title} ${content}`.slice(0, 1000) }),
+      })
+
+      if (!res.ok) return
+
+      const { tags: aiTags } = await res.json()
+      if (!aiTags || !aiTags.length) return
+
+      const state = get()
+
+      // Update in Supabase if authenticated + ready
+      if (state.isAuthenticated && state.supabaseReady) {
+        try {
+          const supabase = await getSupabaseBrowser()
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            await supabase
+              .from('memories')
+              .update({ tags: aiTags.join(',') })
+              .eq('id', memoryId)
+          }
+        } catch {
+          // Silently fail Supabase update — local state still updates
+        }
+      } else {
+        // Update via Prisma API
+        try {
+          await fetch(`/api/memories/${memoryId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: aiTags }),
+          })
+        } catch {
+          // Silently fail
+        }
+      }
+
+      // Update the local state so tags appear immediately
+      get().updateMemory(memoryId, { tags: aiTags })
+    } catch {
+      // Non-blocking: never fail the save flow
+    }
+  },
+
+  // ── Save Memory (Supabase-aware, optimistic UI) ─────────────────────
   saveMemory: async (data) => {
     const state = get()
     const { type, title, content, sourceUrl, tags, collectionIds } = data
 
-    // Auto-generate tags if not provided
+    // Auto-generate keyword-based tags immediately (optimistic UI)
     let finalTags = tags
     if ((!tags || tags.length === 0) && content?.trim()) {
       const autoTags = autoGenerateTags(content, title || '')
@@ -525,8 +578,14 @@ export const useAetherStore = create<AetherState>((set, get) => ({
           )
         }
 
-        // Optimistic UI: add to store
+        // Optimistic UI: add to store instantly
         get().addMemory(memory)
+
+        // ── Background: call Gemini auto-tag and update ──
+        if (content?.trim()) {
+          get().backgroundAutoTag(memory.id, content, title || '')
+        }
+
         return memory
       } catch {
         // Fall through to Prisma API
@@ -550,6 +609,12 @@ export const useAetherStore = create<AetherState>((set, get) => ({
       if (res.ok) {
         const memory: Memory = await res.json()
         get().addMemory(memory)
+
+        // ── Background: call Gemini auto-tag and update ──
+        if (content?.trim()) {
+          get().backgroundAutoTag(memory.id, content, title || '')
+        }
+
         return memory
       }
     } catch {
