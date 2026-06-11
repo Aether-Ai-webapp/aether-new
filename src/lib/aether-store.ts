@@ -36,10 +36,28 @@ export interface ChatMessage {
   timestamp: Date
 }
 
+export interface AuthUser {
+  id: string
+  email: string
+  name: string
+  avatarUrl: string | null
+}
+
 interface AetherState {
   // Navigation
   currentView: AppView
   setCurrentView: (view: AppView) => void
+
+  // Auth
+  user: AuthUser | null
+  isAuthenticated: boolean
+  isAuthLoading: boolean
+  setUser: (user: AuthUser | null) => void
+  setAuthLoading: (loading: boolean) => void
+  login: (email: string, password: string) => Promise<boolean>
+  signup: (email: string, password: string, name: string) => Promise<boolean>
+  logout: () => Promise<void>
+  checkSession: () => Promise<void>
 
   // Data
   memories: Memory[]
@@ -79,10 +97,108 @@ interface AetherState {
   deleteCollection: (id: string) => void
 }
 
-export const useAetherStore = create<AetherState>((set) => ({
+export const useAetherStore = create<AetherState>((set, get) => ({
   // Navigation
   currentView: 'dashboard',
   setCurrentView: (view) => set({ currentView: view, selectedMemoryId: null, selectedCollectionId: null }),
+
+  // Auth
+  user: null,
+  isAuthenticated: false,
+  isAuthLoading: true,
+  setUser: (user) => set({ user, isAuthenticated: !!user }),
+  setAuthLoading: (isAuthLoading) => set({ isAuthLoading }),
+
+  login: async (email, password) => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) return false
+      const data = await res.json()
+      if (data.user) {
+        set({
+          user: {
+            id: data.user.id,
+            email: data.user.email || '',
+            name: data.user.user_metadata?.name || '',
+            avatarUrl: data.user.user_metadata?.avatar_url || null,
+          },
+          isAuthenticated: true,
+        })
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  signup: async (email, password, name) => {
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name }),
+      })
+      if (!res.ok) return false
+      const data = await res.json()
+      if (data.user) {
+        set({
+          user: {
+            id: data.user.id,
+            email: data.user.email || '',
+            name: name || '',
+            avatarUrl: null,
+          },
+          isAuthenticated: true,
+        })
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // Ignore
+    }
+    set({
+      user: null,
+      isAuthenticated: false,
+      memories: [],
+      collections: [],
+      chatMessages: [],
+    })
+  },
+
+  checkSession: async () => {
+    set({ isAuthLoading: true })
+    try {
+      const res = await fetch('/api/auth/session')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.authenticated && data.user) {
+          set({ user: data.user, isAuthenticated: true })
+        } else {
+          // No Supabase session, but allow local use
+          set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
+        }
+      } else {
+        set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
+      }
+    } catch {
+      // Allow offline/local use
+      set({ user: { id: 'local', email: 'local@aether.app', name: 'Aether User', avatarUrl: null }, isAuthenticated: true })
+    }
+    set({ isAuthLoading: false })
+  },
 
   // Data
   memories: [],

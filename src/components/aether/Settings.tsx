@@ -19,6 +19,7 @@ import {
   BookOpen,
   MessageCircle,
   Shield,
+  LogOut,
 } from 'lucide-react'
 import { useAetherStore } from '@/lib/aether-store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -83,8 +84,8 @@ const planFeatures = [
 
 // ─── Component ──────────────────────────────────────────────────────
 export function Settings() {
-  const { darkMode, toggleDarkMode, memories, collections } = useAetherStore()
-  const [profile, setProfile] = useState(defaultProfile)
+  const { darkMode, toggleDarkMode, memories, collections, user, logout } = useAetherStore()
+  const [profile, setProfile] = useState({ name: user?.name || 'Aether User', email: user?.email || 'hello@aether.app' })
   const [editName, setEditName] = useState(profile.name)
   const [editEmail, setEditEmail] = useState(profile.email)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -232,6 +233,19 @@ export function Settings() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+
+              {/* Logout Button */}
+              {user && user.id !== 'local' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => { logout(); toast.success('Signed out'); }}
+                >
+                  <LogOut className="size-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

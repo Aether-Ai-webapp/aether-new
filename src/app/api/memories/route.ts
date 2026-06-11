@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Simple auto-tagging based on content keywords (no external API needed)
+function autoGenerateTags(content: string, title: string): string[] {
+  const text = `${title} ${content}`.toLowerCase()
+  const tagMap: Record<string, string[]> = {
+    'work': ['meeting', 'project', 'deadline', 'client', 'office', 'team', 'q1', 'q2', 'q3', 'q4', 'quarterly', 'strategy'],
+    'personal': ['routine', 'morning', 'exercise', 'meditation', 'journal', 'habit'],
+    'travel': ['trip', 'itinerary', 'flight', 'hotel', 'visit', 'tokyo', 'paris', 'destination'],
+    'learning': ['learn', 'study', 'course', 'tutorial', 'book', 'read', 'article'],
+    'code': ['code', 'programming', 'react', 'javascript', 'typescript', 'api', 'bug', 'feature', 'css', 'html', 'framework'],
+    'design': ['design', 'ui', 'ux', 'layout', 'color', 'font', 'figma', 'wireframe'],
+    'ai': ['ai', 'machine learning', 'neural', 'model', 'gpt', 'gemini', 'llm', 'chatbot'],
+    'recipe': ['recipe', 'cook', 'bake', 'ingredient', 'food', 'meal', 'breakfast', 'dinner'],
+    'idea': ['idea', 'concept', 'brainstorm', 'innovative', 'startup', 'prototype'],
+    'finance': ['budget', 'expense', 'invest', 'savings', 'money', 'cost'],
+  }
+
+  const tags: string[] = []
+  for (const [tag, keywords] of Object.entries(tagMap)) {
+    if (keywords.some(kw => text.includes(kw))) {
+      tags.push(tag)
+    }
+  }
+
+  return tags.slice(0, 5)
+}
+
 // GET /api/memories - List all memories
 export async function GET() {
   try {
@@ -45,7 +71,7 @@ export async function GET() {
   }
 }
 
-// POST /api/memories - Create a new memory
+// POST /api/memories - Create a new memory with auto-tagging
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -55,13 +81,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Content or URL is required' }, { status: 400 })
     }
 
+    // Auto-generate tags if not provided
+    let finalTags = tags
+    if ((!tags || tags.length === 0) && content?.trim()) {
+      const autoTags = autoGenerateTags(content, title || '')
+      if (autoTags.length > 0) {
+        finalTags = autoTags
+      }
+    }
+
     const memory = await db.memory.create({
       data: {
         type: type || 'text',
         title: title || '',
         content: content || '',
+        summary: null,
         sourceUrl: sourceUrl || null,
-        tags: tags ? tags.join(',') : '',
+        tags: finalTags ? (Array.isArray(finalTags) ? finalTags.join(',') : finalTags) : '',
         collections: collectionIds?.length
           ? {
               create: collectionIds.map((cid: string) => ({
