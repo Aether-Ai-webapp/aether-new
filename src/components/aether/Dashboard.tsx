@@ -17,8 +17,15 @@ import {
   Send,
   Loader2,
   Layers,
+  Lightbulb,
+  Briefcase,
+  GraduationCap,
+  Music,
+  Plane,
+  Coffee,
+  Code,
 } from 'lucide-react'
-import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+import { useAetherStore, type Memory, type MemoryType, type Collection } from '@/lib/aether-store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -204,14 +211,6 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
       transition={{ duration: 0.5, ease: 'easeOut' }}
       className="relative space-y-8 max-w-5xl mx-auto pb-24 md:pb-8"
     >
-      {/* ── Ambient Blurs (Dark Mode) ──────────────────────────────── */}
-      {isDark && (
-        <>
-          <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-purple-700/10 rounded-full blur-[150px] pointer-events-none z-0" />
-          <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-indigo-700/10 rounded-full blur-[130px] pointer-events-none z-0" />
-        </>
-      )}
-
       {/* ── Greeting Section ──────────────────────────────────────── */}
       <motion.section
         variants={itemVariants}
@@ -248,7 +247,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </motion.p>
       </motion.section>
 
-      {/* ── Gravity Capture Bar ───────────────────────────────────── */}
+      {/* ── Gravity Capture Bar — Enhanced Glow ─────────────────────── */}
       <motion.section
         variants={itemVariants}
         initial="hidden"
@@ -258,7 +257,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         <div className={cn(
           'relative p-1.5 transition-all duration-300',
           isDark
-            ? 'bg-white/[0.02] border border-white/[0.06] rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_60px_-10px_rgba(139,92,246,0.4)] focus-within:border-purple-500/30'
+            ? 'bg-white/[0.02] border border-white/[0.06] rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
             : 'bg-white border border-border rounded-xl shadow-sm focus-within:shadow-md focus-within:border-primary/50'
         )}>
           <div className="flex items-center gap-2">
@@ -420,25 +419,18 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </div>
 
         {recentMemories.length === 0 ? (
-          <Card className={cn(
-            'border-0',
-            isDark ? 'bg-white/[0.03] shadow-none' : 'bg-white shadow-sm'
-          )}>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <div className={cn(
-                'size-14 rounded-full flex items-center justify-center mb-4',
-                isDark ? 'bg-purple-600/10' : 'bg-[#F5EDE6]'
-              )}>
-                <BookOpen className={cn('size-6', isDark ? 'text-purple-400/50' : 'text-[#6D597A]/50')} />
-              </div>
-              <p className={cn('text-sm font-medium', isDark ? 'text-white' : 'text-foreground')}>
-                No memories yet
-              </p>
-              <p className={cn('text-xs mt-1 max-w-[240px]', isDark ? 'text-white/30' : 'text-muted-foreground')}>
-                Start by typing in the capture bar above!
-              </p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <motion.div
+              animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              className="mb-4"
+            >
+              <FileText className={cn('size-10', isDark ? 'text-purple-400/50' : 'text-[#6D597A]/30')} />
+            </motion.div>
+            <p className={cn('text-sm font-medium', isDark ? 'text-white/20' : 'text-muted-foreground')}>
+              Your mind is clear. Dump a thought above.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {recentMemories.map((memory, i) => (
@@ -478,25 +470,18 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         </div>
 
         {collections.length === 0 ? (
-          <Card className={cn(
-            'border-0',
-            isDark ? 'bg-white/[0.03] shadow-none' : 'bg-white shadow-sm'
-          )}>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <div className={cn(
-                'size-14 rounded-full flex items-center justify-center mb-4',
-                isDark ? 'bg-orange-600/10' : 'bg-[#F5EDE6]'
-              )}>
-                <Layers className={cn('size-6', isDark ? 'text-orange-400/50' : 'text-[#E07A5F]/50')} />
-              </div>
-              <p className={cn('text-sm font-medium', isDark ? 'text-white' : 'text-foreground')}>
-                No collections yet
-              </p>
-              <p className={cn('text-xs mt-1 max-w-[240px]', isDark ? 'text-white/30' : 'text-muted-foreground')}>
-                Create collections to organize your memories.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <motion.div
+              animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+              className="mb-4"
+            >
+              <Layers className={cn('size-10', isDark ? 'text-orange-400/50' : 'text-[#E07A5F]/30')} />
+            </motion.div>
+            <p className={cn('text-sm font-medium', isDark ? 'text-white/20' : 'text-muted-foreground')}>
+              Collections will appear as you save thoughts.
+            </p>
+          </div>
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none -mx-1 px-1">
             {collections.map((collection) => (
@@ -525,17 +510,6 @@ const collectionIconMap: Record<string, React.ElementType> = {
 function getCollectionIcon(iconStr: string): React.ElementType {
   return collectionIconMap[iconStr] || Layers
 }
-
-// ─── Imports needed for collection icons ────────────────────────────
-import {
-  Lightbulb,
-  Briefcase,
-  GraduationCap,
-  Music,
-  Plane,
-  Coffee,
-  Code,
-} from 'lucide-react'
 
 // ─── Memory Card ────────────────────────────────────────────────────
 function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
