@@ -154,7 +154,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Navigation — 4 icons only */}
-            <nav className="flex-1 py-4 flex flex-col gap-1 px-2 overflow-y-auto items-center">
+            <nav className="flex-1 py-4 flex flex-col space-y-1 px-2 overflow-y-auto">
               <TooltipProvider delayDuration={0}>
                 {navItems.map((item) => {
                   const isActive = currentView === item.view
@@ -165,7 +165,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <button
                           onClick={() => setCurrentView(item.view)}
                           className={cn(
-                            'flex items-center gap-3 rounded-xl p-3 text-sm font-medium transition-all duration-200 w-full',
+                            'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium leading-none transition-all duration-200 w-full',
                             isDark
                               ? isActive
                                 ? 'text-purple-400 bg-purple-500/10 shadow-[0_0_15px_-3px_rgba(139,92,246,0.3)]'
@@ -175,20 +175,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                 : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                           )}
                         >
-                          <Icon className="w-5 h-5 shrink-0" />
-                          <AnimatePresence>
-                            {sidebarExpanded && (
-                              <motion.span
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="whitespace-nowrap overflow-hidden"
-                              >
-                                {item.label}
-                              </motion.span>
-                            )}
-                          </AnimatePresence>
+                          <Icon className="w-5 h-5 flex-shrink-0" />
+                          <span className={sidebarExpanded ? 'block' : 'hidden'}>
+                            {item.label}
+                          </span>
                         </button>
                       </TooltipTrigger>
                       {!sidebarExpanded && (
@@ -298,7 +288,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
-                className="p-4 md:p-6 lg:p-8"
+                className="p-8 md:p-12"
               >
                 {children}
               </motion.div>
