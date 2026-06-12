@@ -47,6 +47,9 @@ const mobileNavItems: { view: AppView; label: string; icon: React.ElementType }[
   { view: 'settings', label: 'Settings', icon: Settings },
 ]
 
+// ── Custom easing: [0.22, 1, 0.36, 1] ──────────────────────────────
+const pageEasing = [0.22, 1, 0.36, 1] as const
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { currentView, setCurrentView, darkMode, isAuthenticated, user, setShowAuthModal, logout } = useAetherStore()
   const isMobile = useIsMobile()
@@ -65,20 +68,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={cn('min-h-dvh flex flex-col transition-theme', isDark && 'dark')}>
-      {/* ── Aurora Mesh Gradient (Dark Mode) ───────────────────────── */}
-      {isDark && <AuroraBackground />}
+    <div className={cn(
+      'min-h-dvh flex flex-col transition-colors duration-500',
+      isDark ? 'bg-[#06060a]' : 'bg-[#f8f9fc]'
+    )}>
+      {/* ── Living Aurora Background (Both Modes) ──────────────────── */}
+      <AuroraBackground isDark={isDark} />
 
       <div className="relative z-10 flex flex-1 min-h-0">
-        {/* ── Minimal Glassmorphic Sidebar (Desktop) ──────────────── */}
+        {/* ── Glassmorphic Sidebar (Desktop) ────────────────────────── */}
         {!isMobile && (
           <aside
             className={cn(
               'h-screen fixed left-0 top-0 z-40 flex flex-col transition-all duration-300',
               sidebarExpanded ? 'w-64' : 'w-20',
               isDark
-                ? 'bg-white/[0.02] backdrop-blur-2xl border-r border-white/[0.05]'
-                : 'bg-sidebar border-r border-border'
+                ? 'bg-white/[0.02] backdrop-blur-2xl border-r border-white/[0.04]'
+                : 'bg-white/60 backdrop-blur-2xl border-r border-gray-200/50'
             )}
             onMouseEnter={() => setSidebarExpanded(true)}
             onMouseLeave={() => setSidebarExpanded(false)}
@@ -87,10 +93,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className={cn(
               'flex items-center justify-between gap-2 h-16 shrink-0',
               sidebarExpanded ? 'px-4' : 'px-0 justify-center',
-              isDark ? 'border-b border-white/[0.05]' : 'border-b border-border'
+              isDark ? 'border-b border-white/[0.04]' : 'border-b border-gray-200/50'
             )}>
               <div className="flex items-center gap-2 min-w-0">
-                <Brain className={cn('size-6 shrink-0', isDark ? 'text-purple-400' : 'text-primary')} />
+                <Brain className={cn('size-6 shrink-0', isDark ? 'text-purple-400' : 'text-purple-600')} />
                 <AnimatePresence>
                   {sidebarExpanded && (
                     <motion.span
@@ -102,7 +108,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         'text-2xl font-bold whitespace-nowrap overflow-hidden',
                         isDark
                           ? 'bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent'
-                          : 'text-foreground'
+                          : 'text-gray-900'
                       )}
                     >
                       AETHER
@@ -127,7 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         size="sm"
                         className={cn(
                           'h-7 text-xs gap-1 px-2',
-                          isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]' : 'text-muted-foreground hover:text-foreground'
+                          isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
                         )}
                         onClick={handleSignOut}
                       >
@@ -140,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         size="sm"
                         className={cn(
                           'h-7 text-xs gap-1 px-2',
-                          isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]' : 'text-muted-foreground hover:text-foreground'
+                          isDark ? 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
                         )}
                         onClick={() => setShowAuthModal(true)}
                       >
@@ -153,7 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </AnimatePresence>
             </div>
 
-            {/* Navigation — 4 icons only */}
+            {/* Navigation — 4 icons, with hover spring animation */}
             <nav className="flex-1 py-4 flex flex-col space-y-1 px-2 overflow-y-auto">
               <TooltipProvider delayDuration={0}>
                 {navItems.map((item) => {
@@ -162,24 +168,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   return (
                     <Tooltip key={item.view}>
                       <TooltipTrigger asChild>
-                        <button
-                          onClick={() => setCurrentView(item.view)}
-                          className={cn(
-                            'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium leading-none transition-all duration-200 w-full',
-                            isDark
-                              ? isActive
-                                ? 'text-purple-400 bg-purple-500/10 shadow-[0_0_15px_-3px_rgba(139,92,246,0.3)]'
-                                : 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]'
-                              : isActive
-                                ? 'bg-primary text-primary-foreground shadow-sm'
-                                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                          )}
+                        <motion.div
+                          whileHover={{ x: 4 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                         >
-                          <Icon className="w-5 h-5 flex-shrink-0" />
-                          <span className={sidebarExpanded ? 'block' : 'hidden'}>
-                            {item.label}
-                          </span>
-                        </button>
+                          <button
+                            onClick={() => setCurrentView(item.view)}
+                            className={cn(
+                              'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium leading-none transition-all duration-200 w-full',
+                              isDark
+                                ? isActive
+                                  ? 'text-purple-400 bg-purple-500/10 shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]'
+                                  : 'text-white/30 hover:text-white/70 hover:bg-white/[0.03]'
+                                : isActive
+                                  ? 'text-purple-700 bg-purple-50 rounded-xl shadow-[0_0_20px_-5px_rgba(139,92,246,0.15)]'
+                                  : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100/60'
+                            )}
+                          >
+                            <Icon className="w-5 h-5 flex-shrink-0" />
+                            <span className={sidebarExpanded ? 'block' : 'hidden'}>
+                              {item.label}
+                            </span>
+                          </button>
+                        </motion.div>
                       </TooltipTrigger>
                       {!sidebarExpanded && (
                         <TooltipContent side="right" className="font-medium">
@@ -193,14 +204,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             {/* Add Memory Button */}
-            <div className={cn('p-3 shrink-0', isDark ? 'border-t border-white/[0.05]' : 'border-t border-border')}>
+            <div className={cn('p-3 shrink-0', isDark ? 'border-t border-white/[0.04]' : 'border-t border-gray-200/50')}>
               <Button
                 onClick={handleAddMemory}
                 className={cn(
                   'w-full gap-2 hover:opacity-90 shadow-md',
                   isDark
                     ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.4)] hover:shadow-[0_0_30px_-5px_rgba(139,92,246,0.6)]'
-                    : 'bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground',
+                    : 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]',
                   sidebarExpanded ? 'justify-start px-3' : 'justify-center px-0'
                 )}
                 size={sidebarExpanded ? 'default' : 'icon'}
@@ -236,16 +247,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className={cn(
               'flex items-center justify-between px-4 h-12 shrink-0',
               isDark
-                ? 'bg-white/[0.02] backdrop-blur-xl border-b border-white/[0.05]'
-                : 'bg-background border-b border-border'
+                ? 'bg-white/[0.02] backdrop-blur-xl border-b border-white/[0.04]'
+                : 'bg-white/60 backdrop-blur-xl border-b border-gray-200/50'
             )}>
               <div className="flex items-center gap-2">
-                <Brain className={cn('size-5', isDark ? 'text-purple-400' : 'text-primary')} />
+                <Brain className={cn('size-5', isDark ? 'text-purple-400' : 'text-purple-600')} />
                 <span className={cn(
                   'font-semibold text-sm',
                   isDark
                     ? 'bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent'
-                    : 'text-foreground'
+                    : 'text-gray-900'
                 )}>
                   AETHER
                 </span>
@@ -256,7 +267,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   size="sm"
                   className={cn(
                     'h-7 text-xs gap-1 px-2',
-                    isDark ? 'text-white/30 hover:text-white/70' : 'text-muted-foreground hover:text-foreground'
+                    isDark ? 'text-white/30 hover:text-white/70' : 'text-gray-400 hover:text-gray-700'
                   )}
                   onClick={handleSignOut}
                 >
@@ -269,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   size="sm"
                   className={cn(
                     'h-7 text-xs gap-1 px-2',
-                    isDark ? 'text-white/30 hover:text-white/70' : 'text-muted-foreground hover:text-foreground'
+                    isDark ? 'text-white/30 hover:text-white/70' : 'text-gray-400 hover:text-gray-700'
                   )}
                   onClick={() => setShowAuthModal(true)}
                 >
@@ -284,10 +295,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentView}
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
+                transition={{ duration: 0.6, ease: pageEasing as unknown as number[] }}
                 className="p-8 md:p-12"
               >
                 {children}
@@ -300,10 +311,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* ── Mobile Bottom Navigation ──────────────────────────────── */}
       {isMobile && (
         <nav className={cn(
-          'fixed bottom-0 left-0 right-0 z-40 safe-area-bottom transition-theme',
+          'fixed bottom-0 left-0 right-0 z-40 safe-area-bottom',
           isDark
-            ? 'bg-white/[0.02] backdrop-blur-2xl border-t border-white/[0.05]'
-            : 'bg-background border-t border-border'
+            ? 'bg-white/[0.02] backdrop-blur-2xl border-t border-white/[0.04]'
+            : 'bg-white/60 backdrop-blur-2xl border-t border-gray-200/50'
         )}>
           <div className="flex items-center justify-around h-16 px-2 relative">
             {mobileNavItems.slice(0, 2).map((item) => {
@@ -320,8 +331,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         ? 'text-purple-400'
                         : 'text-white/30'
                       : isActive
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
+                        ? 'text-purple-700'
+                        : 'text-gray-400'
                   )}
                 >
                   <Icon className="size-5" />
@@ -337,7 +348,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 'flex items-center justify-center size-12 -mt-6 rounded-full shadow-lg hover:opacity-90 active:scale-95 transition-all',
                 isDark
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_25px_-5px_rgba(139,92,246,0.5)]'
-                  : 'bg-gradient-to-r from-primary to-[#8B6F9A] text-primary-foreground'
+                  : 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-[0_0_25px_-5px_rgba(139,92,246,0.3)]'
               )}
             >
               <Plus className="size-6" />
@@ -357,8 +368,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         ? 'text-purple-400'
                         : 'text-white/30'
                       : isActive
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
+                        ? 'text-purple-700'
+                        : 'text-gray-400'
                   )}
                 >
                   <Icon className="size-5" />

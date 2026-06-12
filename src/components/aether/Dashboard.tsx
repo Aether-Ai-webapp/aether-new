@@ -113,51 +113,31 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 15 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
+      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
       className="relative max-w-3xl mx-auto pb-24 md:pb-8"
     >
       {/* ── Greeting ──────────────────────────────────────────────── */}
-      <motion.section
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10"
-      >
-        <motion.h1
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className={cn(
-            'text-3xl font-bold tracking-tight mb-2',
-            isDark ? 'text-white' : 'text-foreground'
-          )}
-        >
+      <section className="relative z-10">
+        <h1 className={cn(
+          'text-3xl font-bold tracking-tight mb-2',
+          isDark ? 'text-white' : 'text-gray-900'
+        )}>
           {getGreeting()}
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
-          className={cn('text-base mb-10', isDark ? 'text-white/30' : 'text-muted-foreground/60')}
-        >
+        </h1>
+        <p className={cn('text-base mb-10', isDark ? 'text-white/30' : 'text-gray-400')}>
           What&apos;s on your mind?
-        </motion.p>
-      </motion.section>
+        </p>
+      </section>
 
       {/* ── Gravity Capture Bar ─────────────────────────────────────── */}
-      <motion.section
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10 mb-10"
-      >
+      <section className="relative z-10 mb-10">
         <div className={cn(
-          'relative p-1.5 transition-all duration-300',
+          'relative p-1.5 rounded-2xl transition-all duration-500',
           isDark
-            ? 'bg-white/[0.02] border border-white/[0.06] rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
-            : 'bg-white border border-border rounded-xl shadow-sm focus-within:shadow-md focus-within:border-primary/50'
+            ? 'bg-white/[0.02] border border-white/[0.06] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
+            : 'bg-white/70 border border-gray-200/80 shadow-[0_0_0_1px_rgba(255,255,255,0.8),0_0_30px_-10px_rgba(139,92,246,0.1)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_60px_-15px_rgba(139,92,246,0.2)] focus-within:border-purple-400/40'
         )}>
           <div className="flex items-center gap-2">
             <input
@@ -170,7 +150,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                 'w-full bg-transparent text-base focus:outline-none px-4 py-3',
                 isDark
                   ? 'text-white placeholder:text-white/25'
-                  : 'text-foreground placeholder:text-muted-foreground/60'
+                  : 'text-gray-900 placeholder:text-gray-400'
               )}
             />
             <button
@@ -180,11 +160,11 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                 'flex items-center justify-center text-sm font-medium px-4 py-1.5 rounded-lg transition-all duration-200 active:scale-95 shrink-0',
                 captureText.trim()
                   ? isDark
-                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_15px_-3px_rgba(139,92,246,0.6)] hover:shadow-[0_0_25px_-3px_rgba(139,92,246,0.8)]'
-                    : 'bg-gradient-to-r from-primary to-[#8B6F9A] text-white shadow-md hover:opacity-90'
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.6)]'
+                    : 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.3)]'
                   : isDark
                     ? 'bg-white/[0.06] text-white/25'
-                    : 'bg-muted text-muted-foreground'
+                    : 'bg-gray-100 text-gray-400'
               )}
             >
               {isCapturing ? (
@@ -195,17 +175,12 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
             </button>
           </div>
         </div>
-      </motion.section>
+      </section>
 
       {/* ── Recent Memories Feed ───────────────────────────────────── */}
-      <motion.section
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10"
-      >
+      <section className="relative z-10">
         {recentMemories.length === 0 ? (
-          <p className={cn('text-sm mt-20 text-center', isDark ? 'text-white/15' : 'text-muted-foreground/40')}>
+          <p className={cn('text-sm mt-20 text-center', isDark ? 'text-white/15' : 'text-gray-300')}>
             Your mind is clear. Dump a thought above.
           </p>
         ) : (
@@ -215,7 +190,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
             ))}
           </div>
         )}
-      </motion.section>
+      </section>
     </motion.div>
   )
 }
@@ -235,22 +210,24 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
     <motion.div
       variants={itemVariants}
       custom={index}
+      whileHover={{ y: -2 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
     >
       <div
         className={cn(
-          'rounded-xl p-5 transition-all duration-200 cursor-pointer group',
+          'rounded-xl p-5 transition-all duration-300 cursor-pointer group',
           isDark
-            ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03]'
-            : 'bg-white border border-border shadow-sm hover:shadow-md'
+            ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08]'
+            : 'bg-white/80 border border-gray-100 hover:bg-white hover:border-gray-200 hover:shadow-lg'
         )}
       >
         <div className="flex items-start gap-4">
           {/* Type icon */}
           <div className={cn(
             'flex items-center justify-center size-9 rounded-lg shrink-0 mt-0.5',
-            isDark ? 'bg-white/[0.04]' : 'bg-[#F5EDE6]'
+            isDark ? 'bg-white/[0.04]' : 'bg-purple-50'
           )}>
-            <Icon className={cn('size-4', isDark ? 'text-white/40' : 'text-[#6D597A]')} />
+            <Icon className={cn('size-4', isDark ? 'text-white/40' : 'text-purple-600')} />
           </div>
 
           {/* Content */}
@@ -258,13 +235,13 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
             <div className="flex items-start justify-between gap-3">
               <p className={cn(
                 'text-sm font-medium leading-snug',
-                isDark ? 'text-white/80' : 'text-foreground'
+                isDark ? 'text-white/80' : 'text-gray-900'
               )}>
                 {displayTitle}
               </p>
               <span className={cn(
                 'text-[11px] whitespace-nowrap shrink-0 mt-0.5',
-                isDark ? 'text-white/20' : 'text-muted-foreground'
+                isDark ? 'text-white/20' : 'text-gray-400'
               )}>
                 {relativeTime}
               </span>
@@ -279,7 +256,7 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
                     variant="secondary"
                     className={cn(
                       'text-[10px] px-1.5 py-0 h-5 font-normal border-0',
-                      isDark ? 'bg-white/[0.04] text-white/30' : 'bg-[#F5EDE6] text-[#6D597A]'
+                      isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-700'
                     )}
                   >
                     {tag}
@@ -290,7 +267,7 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
                     variant="secondary"
                     className={cn(
                       'text-[10px] px-1.5 py-0 h-5 font-normal border-0',
-                      isDark ? 'bg-white/[0.04] text-white/20' : 'bg-[#F5EDE6] text-muted-foreground'
+                      isDark ? 'bg-white/[0.04] text-white/20' : 'bg-gray-100 text-gray-400'
                     )}
                   >
                     +{memory.tags.length - 3}
