@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState, useCallback } from 'react'
+import React, { useMemo, useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -10,6 +10,7 @@ import {
   Mic,
   Send,
   Loader2,
+  Sparkles,
 } from 'lucide-react'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
 import { Badge } from '@/components/ui/badge'
@@ -49,6 +50,17 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
   // ── Capture bar state ──────────────────────────────────────────────
   const [captureText, setCaptureText] = useState('')
   const [isCapturing, setIsCapturing] = useState(false)
+  const [dailyRecap, setDailyRecap] = useState<string>('')
+
+  // ── Daily Recap: pick one random older memory ───────────────────────
+  useEffect(() => {
+    if (memories.length > 0) {
+      const randomIndex = Math.floor(Math.random() * memories.length)
+      setDailyRecap(memories[randomIndex].content)
+    } else {
+      setDailyRecap('')
+    }
+  }, [memories])
 
   const handleCapture = useCallback(async () => {
     const text = captureText.trim()
@@ -129,6 +141,30 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
         <p className={cn('text-base mb-10', isDark ? 'text-white/30' : 'text-gray-400')}>
           What&apos;s on your mind?
         </p>
+      </section>
+
+      {/* ── Daily Recap ─────────────────────────────────────────────── */}
+      <section className="relative z-10">
+        <div className={cn(
+          'w-full max-w-2xl mx-auto mb-8 rounded-2xl p-5',
+          isDark
+            ? 'bg-purple-500/5 border border-purple-500/10'
+            : 'bg-purple-50/50 border border-purple-200/50'
+        )}>
+          <p className={cn(
+            'text-xs font-semibold uppercase tracking-widest mb-2 flex items-center gap-2',
+            isDark ? 'text-purple-400' : 'text-purple-600'
+          )}>
+            <Sparkles className="w-3.5 h-3.5" />
+            Daily Recap
+          </p>
+          <p className={cn(
+            'text-sm',
+            isDark ? 'text-white/50' : 'text-gray-500'
+          )}>
+            {dailyRecap || 'Start saving thoughts to see your daily recap.'}
+          </p>
+        </div>
       </section>
 
       {/* ── Gravity Capture Bar ─────────────────────────────────────── */}

@@ -51,7 +51,7 @@ export function AuthModal() {
 
       if (success) {
         toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
-        handleClose()
+        window.location.href = '/'
       } else {
         toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
       }

@@ -92,3 +92,39 @@ Stage Summary:
 - Framer Motion: greeting slides in from left, dashboard fades up, quick-add buttons spring
 - All text is white/white-opacity in dark mode — no dark blue or black text
 - Lint passes cleanly
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Dashboard Polish & Bug Squashing — 3 Critical Logic Bugs
+
+Work Log:
+- **BUG 1: Daily Recap** — Added `dailyRecap` state + `useEffect` in Dashboard.tsx
+  - Picks ONE random memory from the array when `memories` changes
+  - Renders between greeting and capture bar with: `bg-purple-500/5 border-purple-500/10 rounded-2xl p-5`
+  - Header: `<Sparkles />` icon + "DAILY RECAP" in `text-xs font-semibold uppercase tracking-widest text-purple-400`
+  - Body: `text-white/50 text-sm` showing the random memory content
+  - Fallback: "Start saving thoughts to see your daily recap."
+  - Light mode: `bg-purple-50/50 border-purple-200/50` with `text-purple-600` header and `text-gray-500` body
+- **BUG 2: Sidebar Simplification** — Rewrote AppShell.tsx sidebar
+  - Replaced `sidebarExpanded` (hover-based) with `isSidebarOpen` (boolean, default true)
+  - Added hamburger `Menu` icon toggle button in sidebar header — responds instantly
+  - Removed ALL `AnimatePresence` + `motion.span` for sidebar text labels
+  - Text labels now use `opacity-0`/`opacity-100` with `transition-opacity duration-200` — no lag
+  - Sidebar container uses pure Tailwind: `transition-all duration-300 ease-in-out`
+  - `overflow-hidden` on aside clips collapsed text naturally
+  - Auth button (Sign In/Log Out) uses `overflow-hidden` container — hidden when collapsed
+  - Removed `onMouseEnter`/`onMouseLeave` hover logic entirely
+- **BUG 3: Auth Redirect Fix** — Hard redirects instead of router.push
+  - AuthModal.tsx: After successful login/signup, `window.location.href = '/'` (hard redirect)
+  - AppShell.tsx: `handleSignOut` calls `await logout()` then immediately `window.location.href = '/'`
+  - No artificial delays, no waiting for state updates before redirect
+- Lint passes clean
+- Agent Browser verified: Daily Recap section renders, sidebar toggle works, all 3 fixes confirmed
+
+Stage Summary:
+- Daily Recap adds life between greeting and capture bar
+- Sidebar toggle is instant with pure CSS transitions — no Framer Motion lag
+- Auth redirects use hard `window.location.href` — no router.push delays
+- No CSS or visual design was changed — only logic bugs fixed
+- 5 Golden Rules preserved (no router.push for auth, no blank isLoading, no state/backend changes, uses @supabase/ssr, .env.local untouched)
