@@ -325,8 +325,10 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         const data = await res.json()
         if (data.authenticated && data.user) {
           set({ user: data.user, isAuthenticated: true })
-          // Check Supabase tables + fetch data
+          // Check Supabase tables + immediately fetch data
           get().checkSupabaseTables()
+          get().fetchMemories()
+          get().fetchCollections()
           return
         }
       }

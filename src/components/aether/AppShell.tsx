@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {!isMobile && (
           <aside
             className={cn(
-              'h-screen fixed left-0 top-0 z-40 flex flex-col transition-all duration-300 ease-in-out overflow-hidden',
+              'h-screen fixed left-0 top-0 z-40 flex flex-col transition-all duration-200 ease-in-out overflow-hidden',
               isSidebarOpen ? 'w-64' : 'w-20',
               isDark
                 ? 'bg-white/[0.02] backdrop-blur-2xl border-r border-white/[0.04]'
@@ -229,7 +229,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* ── Main Content Area ────────────────────────────────────── */}
         <main
           className={cn(
-            'flex-1 flex flex-col min-h-0 transition-all duration-300 ease-in-out',
+            'flex-1 flex flex-col min-h-0 transition-all duration-200 ease-in-out',
             !isMobile && (isSidebarOpen ? 'ml-64' : 'ml-20')
           )}
         >

@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { formatDistanceToNow } from 'date-fns'
 import {
   FileText,
@@ -9,19 +9,11 @@ import {
   ImageIcon,
   Mic,
   Send,
-  Loader2,
   Sparkles,
 } from 'lucide-react'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
-
-// ─── Animation variants ────────────────────────────────────────────
-const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────
 function getGreeting(): string {
@@ -38,6 +30,11 @@ const typeIconMap: Record<MemoryType, React.ElementType> = {
   voice: Mic,
 }
 
+/** Generate a temp ID for optimistic memories */
+function tempId(): string {
+  return `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 // ─── Props ──────────────────────────────────────────────────────────
 interface DashboardProps {
   onAddMemory?: (type: MemoryType) => void
@@ -49,57 +46,90 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
 
   // ── Capture bar state ──────────────────────────────────────────────
   const [captureText, setCaptureText] = useState('')
-  const [isCapturing, setIsCapturing] = useState(false)
-  const [dailyRecap, setDailyRecap] = useState<string>('')
 
-  // ── Daily Recap: pick one random older memory ───────────────────────
-  useEffect(() => {
-    if (memories.length > 0) {
-      const randomIndex = Math.floor(Math.random() * memories.length)
-      setDailyRecap(memories[randomIndex].content)
-    } else {
-      setDailyRecap('')
-    }
+  // ── Optimistic UI state ────────────────────────────────────────────
+  const [pendingMemories, setPendingMemories] = useState<Memory[]>([])
+  const [isJustSaved, setIsJustSaved] = useState(false)
+  const [showSavedBadge, setShowSavedBadge] = useState(false)
+  const justSavedTimer = useRef<ReturnType<typeof setTimeout>>()
+  const savedBadgeTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  // ── Daily Recap: computed from memories (no effect) ──────────────
+  const dailyRecap = useMemo(() => {
+    if (memories.length === 0) return ''
+    const randomIndex = Math.floor(Math.random() * memories.length)
+    return memories[randomIndex].content
   }, [memories])
 
-  const handleCapture = useCallback(async () => {
+  // ── Cleanup timers on unmount ─────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (justSavedTimer.current) clearTimeout(justSavedTimer.current)
+      if (savedBadgeTimer.current) clearTimeout(savedBadgeTimer.current)
+    }
+  }, [])
+
+  const handleCapture = useCallback(() => {
     const text = captureText.trim()
     if (!text) return
 
+    // ── Create optimistic fake memory instantly ──────────────────────
+    const fakeMemory: Memory = {
+      id: tempId(),
+      type: 'text',
+      title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
+      content: text,
+      summary: null,
+      tags: [],
+      sourceUrl: null,
+      fileUrl: null,
+      imagePreview: null,
+      isFavorite: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      collections: [],
+    }
+
+    // 1. Instantly add to pending (appears in feed NOW)
+    setPendingMemories((prev) => [fakeMemory, ...prev])
+
+    // 2. Clear the input bar immediately
+    setCaptureText('')
+
+    // 3. Fire dopamine hits
+    setIsJustSaved(true)
+    setShowSavedBadge(true)
+    if (justSavedTimer.current) clearTimeout(justSavedTimer.current)
+    if (savedBadgeTimer.current) clearTimeout(savedBadgeTimer.current)
+    justSavedTimer.current = setTimeout(() => setIsJustSaved(false), 500)
+    savedBadgeTimer.current = setTimeout(() => setShowSavedBadge(false), 1500)
+
+    // 4. Background: save to database (no await for UI)
     if (!isAuthenticated) {
-      const savedText = text
       requireAuth(async () => {
-        const result = await saveMemory({
+        await saveMemory({
           type: 'text',
-          title: savedText.split('\n')[0].slice(0, 80) || 'Quick Note',
-          content: savedText,
+          title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
+          content: text,
         })
-        if (result) {
-          toast.success('Memory saved!')
-        }
+        // After save, remove the fake from pending
+        setPendingMemories((prev) => prev.filter((m) => m.id !== fakeMemory.id))
       })
-      setCaptureText('')
       return
     }
 
-    setIsCapturing(true)
-    try {
-      const result = await saveMemory({
-        type: 'text',
-        title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
-        content: text,
-      })
-      if (result) {
-        setCaptureText('')
-        toast.success('Memory saved!')
-      } else {
-        toast.error('Failed to save memory')
-      }
-    } catch {
-      toast.error('Something went wrong')
-    } finally {
-      setIsCapturing(false)
-    }
+    // Fire-and-forget: save in background, store will add the real memory
+    saveMemory({
+      type: 'text',
+      title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
+      content: text,
+    }).then(() => {
+      // Remove the fake from pending now that the real one is in the store
+      setPendingMemories((prev) => prev.filter((m) => m.id !== fakeMemory.id))
+    }).catch(() => {
+      // If save fails, remove the pending memory
+      setPendingMemories((prev) => prev.filter((m) => m.id !== fakeMemory.id))
+    })
   }, [captureText, isAuthenticated, requireAuth, saveMemory])
 
   const handleCaptureKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -109,17 +139,18 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
     }
   }, [handleCapture])
 
-  // ── Derived data ───────────────────────────────────────────────────
-  const recentMemories = useMemo(
-    () =>
-      [...memories]
-        .sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )
-        .slice(0, 5),
-    [memories]
-  )
+  // ── Derived data: merge pending + real memories, deduped ──────────
+  const displayMemories = useMemo(() => {
+    const real = [...memories]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5)
+
+    // Filter out pending memories whose content already exists in real data
+    const realContents = new Set(real.map((m) => m.content))
+    const uniquePending = pendingMemories.filter((pm) => !realContents.has(pm.content))
+
+    return [...uniquePending, ...real].slice(0, 6)
+  }, [memories, pendingMemories])
 
   const isDark = darkMode
 
@@ -168,12 +199,16 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
       </section>
 
       {/* ── Gravity Capture Bar ─────────────────────────────────────── */}
-      <section className="relative z-10 mb-10">
+      <section className="relative z-10 mb-4">
         <div className={cn(
-          'relative p-1.5 rounded-2xl transition-all duration-500',
+          'relative p-1.5 rounded-2xl transition-all duration-300',
           isDark
-            ? 'bg-white/[0.02] border border-white/[0.06] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
-            : 'bg-white/70 border border-gray-200/80 shadow-[0_0_0_1px_rgba(255,255,255,0.8),0_0_30px_-10px_rgba(139,92,246,0.1)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_60px_-15px_rgba(139,92,246,0.2)] focus-within:border-purple-400/40'
+            ? isJustSaved
+              ? 'bg-white/[0.04] border border-purple-500/40 shadow-[0_0_0_1px_rgba(139,92,246,0.5),0_0_80px_-10px_rgba(139,92,246,0.6)]'
+              : 'bg-white/[0.02] border border-white/[0.06] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
+            : isJustSaved
+              ? 'bg-white/90 border border-purple-400/50 shadow-[0_0_0_1px_rgba(139,92,246,0.5),0_0_60px_-10px_rgba(139,92,246,0.4)]'
+              : 'bg-white/70 border border-gray-200/80 shadow-[0_0_0_1px_rgba(255,255,255,0.8),0_0_30px_-10px_rgba(139,92,246,0.1)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_60px_-15px_rgba(139,92,246,0.2)] focus-within:border-purple-400/40'
         )}>
           <div className="flex items-center gap-2">
             <input
@@ -181,7 +216,6 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
               onChange={(e) => setCaptureText(e.target.value)}
               onKeyDown={handleCaptureKeyDown}
               placeholder="Capture a thought... press Enter to save"
-              disabled={isCapturing}
               className={cn(
                 'w-full bg-transparent text-base focus:outline-none px-4 py-3',
                 isDark
@@ -189,11 +223,13 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                   : 'text-gray-900 placeholder:text-gray-400'
               )}
             />
-            <button
+            <motion.button
               onClick={handleCapture}
-              disabled={!captureText.trim() || isCapturing}
+              disabled={!captureText.trim()}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
               className={cn(
-                'flex items-center justify-center text-sm font-medium px-4 py-1.5 rounded-lg transition-all duration-200 active:scale-95 shrink-0',
+                'flex items-center justify-center text-sm font-medium px-4 py-1.5 rounded-lg transition-colors duration-150 shrink-0',
                 captureText.trim()
                   ? isDark
                     ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.6)]'
@@ -203,27 +239,52 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
                     : 'bg-gray-100 text-gray-400'
               )}
             >
-              {isCapturing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-            </button>
+              <Send className="size-4" />
+            </motion.button>
           </div>
         </div>
+
+        {/* ── "Saved ✨" Badge — dopamine hit ──────────────────────── */}
+        <AnimatePresence>
+          {showSavedBadge && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              className="flex justify-center mt-3"
+            >
+              <span className={cn(
+                'text-xs px-3 py-1 rounded-full',
+                isDark
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-green-50 text-green-600'
+              )}>
+                Saved ✨
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       {/* ── Recent Memories Feed ───────────────────────────────────── */}
-      <section className="relative z-10">
-        {recentMemories.length === 0 ? (
+      <section className="relative z-10 mt-6">
+        {displayMemories.length === 0 ? (
           <p className={cn('text-sm mt-20 text-center', isDark ? 'text-white/15' : 'text-gray-300')}>
             Your mind is clear. Dump a thought above.
           </p>
         ) : (
           <div className="space-y-3">
-            {recentMemories.map((memory, i) => (
-              <MemoryCard key={memory.id} memory={memory} index={i} />
-            ))}
+            {displayMemories.map((memory) => {
+              const isPending = memory.id.startsWith('temp-')
+              return (
+                <MemoryCard
+                  key={memory.id}
+                  memory={memory}
+                  isNew={isPending}
+                />
+              )
+            })}
           </div>
         )}
       </section>
@@ -232,7 +293,7 @@ export function Dashboard({ onAddMemory }: DashboardProps) {
 }
 
 // ─── Memory Card ────────────────────────────────────────────────────
-function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
+function MemoryCard({ memory, isNew }: { memory: Memory; isNew: boolean }) {
   const Icon = typeIconMap[memory.type]
   const displayTitle =
     memory.title || memory.content.split('\n')[0].slice(0, 80) || 'Untitled'
@@ -244,17 +305,22 @@ function MemoryCard({ memory, index }: { memory: Memory; index: number }) {
 
   return (
     <motion.div
-      variants={itemVariants}
-      custom={index}
+      initial={isNew ? { opacity: 0, y: -30, scale: 0.95 } : false}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={
+        isNew
+          ? { type: 'spring', stiffness: 300, damping: 20 }
+          : { duration: 0 }
+      }
       whileHover={{ y: -2 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
     >
       <div
         className={cn(
           'rounded-xl p-5 transition-all duration-300 cursor-pointer group',
           isDark
             ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08]'
-            : 'bg-white/80 border border-gray-100 hover:bg-white hover:border-gray-200 hover:shadow-lg'
+            : 'bg-white/80 border border-gray-100 hover:bg-white hover:border-gray-200 hover:shadow-lg',
+          isNew && (isDark ? 'border-purple-500/20' : 'border-purple-200/60')
         )}
       >
         <div className="flex items-start gap-4">
