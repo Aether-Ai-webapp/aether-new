@@ -128,3 +128,39 @@ Stage Summary:
 - Auth redirects use hard `window.location.href` — no router.push delays
 - No CSS or visual design was changed — only logic bugs fixed
 - 5 Golden Rules preserved (no router.push for auth, no blank isLoading, no state/backend changes, uses @supabase/ssr, .env.local untouched)
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: Speed & Dopamine Update — Optimistic UI, Instant Auth, Spring Animations, Sidebar Speed, Prefetch
+
+Work Log:
+- **CRITICAL FIX 1: Optimistic UI** — Rewrote `handleCapture` in Dashboard.tsx
+  - Creates a fake Memory object with `temp-{timestamp}` ID instantly on save
+  - Adds to `pendingMemories` local state → appears in feed IMMEDIATELY
+  - Clears input bar before any network call
+  - Fires `saveMemory()` in background (fire-and-forget, `.then()` removes fake)
+  - `displayMemories` computed via `useMemo`: merges `pendingMemories` + `recentMemories`, deduped by content
+  - When real memory arrives in store, fake is removed seamlessly (no flash)
+  - If save fails, fake is removed from pending
+  - Removed `isCapturing` state — no more spinner, no more waiting
+- **CRITICAL FIX 2: Instant Auth Redirects** — Already using `window.location.href = '/'` from previous fix. Verified no delays.
+- **CRITICAL FIX 3: Dopamine Hit Animations** — All 4 requested micro-interactions:
+  1. Save button: `<motion.button whileTap={{ scale: 0.9 }} transition={{ type: "spring", stiffness: 500, damping: 15 }}>` — satisfying "thump"
+  2. New memory card: `initial={{ opacity: 0, y: -30, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}` — spring slide-in
+  3. Capture bar glow: `isJustSaved` state adds brighter purple shadow for 500ms, then fades back
+  4. "Saved ✨" badge: green pill `bg-green-500/20 text-green-400` shows for 1.5s with spring entrance/exit
+- **CRITICAL FIX 4: Sidebar Speed** — Changed `duration-300` → `duration-200` on sidebar + main content area
+- **CRITICAL FIX 5: Prefetch Memories** — Updated `checkSession()` in store to immediately call `fetchMemories()` + `fetchCollections()` when session is confirmed (no delay waiting for separate DataLoader)
+- Changed `dailyRecap` from `useState` + `useEffect` to `useMemo` (fixes lint error, no cascading renders)
+- Removed unused imports: `Loader2`, `useRef` for timer cleanup
+- Lint passes clean
+- Agent Browser verified: optimistic save works (memory appears instantly in feed before database confirms)
+- Pushed to GitHub: `new-aether` repo
+
+Stage Summary:
+- Every save feels INSTANT — fake memory appears in 0ms, real memory replaces it in background
+- Dopamine hits: thump button, spring card, purple glow flash, "Saved ✨" badge
+- Sidebar snaps open/closed in 200ms with pure CSS
+- Session check immediately triggers data fetch — no sequential delays
+- 5 Golden Rules preserved
