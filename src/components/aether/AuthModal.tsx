@@ -7,18 +7,19 @@ import { useAetherStore } from '@/lib/aether-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 export function AuthModal() {
-  const { showAuthModal, setShowAuthModal, login, signup } = useAetherStore()
+  const { showAuthModal, setShowAuthModal, login, signup, darkMode } = useAetherStore()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [isLoading, setIsLoading] = useState(false)
 
-  // Form state
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+
+  const isDark = darkMode
 
   const resetForm = () => {
     setEmail('')
@@ -51,7 +52,7 @@ export function AuthModal() {
 
       if (success) {
         toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
-        window.location.href = '/'
+        handleClose()
       } else {
         toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
       }
@@ -72,7 +73,7 @@ export function AuthModal() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-md"
             onClick={handleClose}
           />
 
@@ -86,26 +87,49 @@ export function AuthModal() {
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              className="relative w-full max-w-md bg-white/[0.05] backdrop-blur-xl border border-white/[0.08] rounded-2xl p-8 shadow-2xl"
+              className={cn(
+                'relative w-full max-w-md rounded-2xl p-8 shadow-2xl',
+                isDark
+                  ? 'bg-[#060812]/95 backdrop-blur-xl border border-white/[0.06] shadow-purple-500/10'
+                  : 'bg-white/95 backdrop-blur-xl border border-gray-200 shadow-purple-500/5'
+              )}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Close button */}
               <button
                 onClick={handleClose}
-                className="absolute top-4 right-4 size-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center transition-colors"
+                className={cn(
+                  'absolute top-4 right-4 size-8 rounded-full flex items-center justify-center transition-colors',
+                  isDark
+                    ? 'bg-white/[0.04] hover:bg-white/[0.08] text-white/40'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-500'
+                )}
               >
-                <X className="size-4 text-foreground/60" />
+                <X className="size-4" />
               </button>
 
               {/* Header */}
-              <div className="flex flex-col items-center mb-6">
-                <div className="size-12 rounded-xl bg-gradient-to-br from-[#6D597A] to-[#8B6F9A] flex items-center justify-center shadow-lg mb-3">
-                  <Brain className="size-6 text-white" />
-                </div>
-                <h2 className="text-xl font-bold text-foreground">
+              <div className="flex flex-col items-center mb-8">
+                <motion.div
+                  initial={{ scale: 0.8, rotate: -5 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="size-14 rounded-2xl bg-gradient-to-br from-purple-400 via-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/25 mb-4"
+                >
+                  <Brain className="size-7 text-white" />
+                </motion.div>
+                <h2 className={cn(
+                  'text-2xl font-bold',
+                  isDark
+                    ? 'bg-gradient-to-r from-white to-purple-100 bg-clip-text text-transparent'
+                    : 'text-gray-900'
+                )}>
                   {mode === 'login' ? 'Welcome back' : 'Create account'}
                 </h2>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className={cn(
+                  'text-sm mt-1',
+                  isDark ? 'text-white/30' : 'text-gray-500'
+                )}>
                   {mode === 'login'
                     ? 'Sign in to sync your memories across devices'
                     : 'Start saving memories to the cloud'}
@@ -116,15 +140,25 @@ export function AuthModal() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 {mode === 'signup' && (
                   <div className="space-y-2">
-                    <Label htmlFor="auth-name" className="text-xs font-medium text-foreground/70">Name</Label>
+                    <Label className={cn(
+                      'text-xs font-medium',
+                      isDark ? 'text-white/50' : 'text-gray-600'
+                    )}>Name</Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
+                      <User className={cn(
+                        'absolute left-3 top-1/2 -translate-y-1/2 size-4',
+                        isDark ? 'text-white/20' : 'text-gray-400'
+                      )} />
                       <Input
-                        id="auth-name"
                         placeholder="Your name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="pl-9 h-10 bg-white/[0.06] border-white/[0.08] focus:border-primary/40 focus-visible:ring-primary/20"
+                        className={cn(
+                          'pl-9 h-11',
+                          isDark
+                            ? 'bg-white/[0.03] border-white/[0.06] text-white placeholder:text-white/20 focus:border-purple-500/30 focus-visible:ring-purple-500/15'
+                            : 'bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-purple-400 focus-visible:ring-purple-400/20'
+                        )}
                         disabled={isLoading}
                       />
                     </div>
@@ -132,16 +166,26 @@ export function AuthModal() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="auth-email" className="text-xs font-medium text-foreground/70">Email</Label>
+                  <Label className={cn(
+                    'text-xs font-medium',
+                    isDark ? 'text-white/50' : 'text-gray-600'
+                  )}>Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
+                    <Mail className={cn(
+                      'absolute left-3 top-1/2 -translate-y-1/2 size-4',
+                      isDark ? 'text-white/20' : 'text-gray-400'
+                    )} />
                     <Input
-                      id="auth-email"
                       type="email"
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-9 h-10 bg-white/[0.06] border-white/[0.08] focus:border-primary/40 focus-visible:ring-primary/20"
+                      className={cn(
+                        'pl-9 h-11',
+                        isDark
+                          ? 'bg-white/[0.03] border-white/[0.06] text-white placeholder:text-white/20 focus:border-purple-500/30 focus-visible:ring-purple-500/15'
+                          : 'bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-purple-400 focus-visible:ring-purple-400/20'
+                      )}
                       disabled={isLoading}
                       autoFocus
                     />
@@ -149,45 +193,68 @@ export function AuthModal() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="auth-password" className="text-xs font-medium text-foreground/70">Password</Label>
+                  <Label className={cn(
+                    'text-xs font-medium',
+                    isDark ? 'text-white/50' : 'text-gray-600'
+                  )}>Password</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/50" />
+                    <Lock className={cn(
+                      'absolute left-3 top-1/2 -translate-y-1/2 size-4',
+                      isDark ? 'text-white/20' : 'text-gray-400'
+                    )} />
                     <Input
-                      id="auth-password"
                       type="password"
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-9 h-10 bg-white/[0.06] border-white/[0.08] focus:border-primary/40 focus-visible:ring-primary/20"
+                      className={cn(
+                        'pl-9 h-11',
+                        isDark
+                          ? 'bg-white/[0.03] border-white/[0.06] text-white placeholder:text-white/20 focus:border-purple-500/30 focus-visible:ring-purple-500/15'
+                          : 'bg-gray-50 border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-purple-400 focus-visible:ring-purple-400/20'
+                      )}
                       disabled={isLoading}
                     />
                   </div>
                 </div>
 
-                <Button
+                <motion.button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-[#6D597A] to-[#8B6F9A] text-white hover:opacity-90 shadow-md h-10"
                   disabled={isLoading}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={cn(
+                    'w-full flex items-center justify-center gap-2 h-11 rounded-xl font-semibold text-white transition-all duration-200',
+                    'bg-gradient-to-r from-purple-400 via-violet-500 to-indigo-500',
+                    'hover:from-purple-300 hover:via-violet-400 hover:to-indigo-400',
+                    'shadow-[0_0_24px_-5px_rgba(168,85,247,0.4)] hover:shadow-[0_0_32px_-5px_rgba(168,85,247,0.6)]',
+                    'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'
+                  )}
                 >
                   {isLoading ? (
                     <>
-                      <Loader2 className="size-4 animate-spin mr-2" />
+                      <Loader2 className="size-4 animate-spin" />
                       {mode === 'login' ? 'Signing in...' : 'Creating account...'}
                     </>
                   ) : (
                     <>
                       {mode === 'login' ? 'Sign In' : 'Create Account'}
-                      <ArrowRight className="size-4 ml-1" />
+                      <ArrowRight className="size-4" />
                     </>
                   )}
-                </Button>
+                </motion.button>
               </form>
 
               {/* Switch mode */}
-              <div className="mt-5 text-center">
+              <div className="mt-6 text-center">
                 <button
                   onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className={cn(
+                    'text-xs transition-colors',
+                    isDark
+                      ? 'text-white/25 hover:text-white/50'
+                      : 'text-gray-400 hover:text-gray-700'
+                  )}
                   disabled={isLoading}
                 >
                   {mode === 'login'

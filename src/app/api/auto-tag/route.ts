@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 // ─── Shared prompt (used by BOTH AIs) ────────────────────────────────
-const TAGGING_PROMPT = `Analyze this user's thought. Return a JSON object with ONE field: 'tags'. 'tags' must be an array of 1-2 relevant, lowercase tags (e.g., ['work', 'idea', 'personal', 'study', 'link']). Return ONLY the raw JSON, no markdown formatting, no extra text.`
+const TAGGING_PROMPT = `Analyze this user's thought. Return a JSON object with ONE field: 'tags'. 'tags' must be an array of 3-5 relevant, lowercase tags (e.g., ['work', 'idea', 'personal', 'study', 'link', 'project', 'learning']). Return ONLY the raw JSON, no markdown formatting, no extra text.`
 
 // ─── Clean JSON helper ───────────────────────────────────────────────
 // LLMs sometimes wrap responses in ```json ... ``` blocks
@@ -40,7 +40,7 @@ function parseTagsFromResponse(rawText: string): string[] {
     .filter((t: unknown) => typeof t === 'string')
     .map((t: string) => t.toLowerCase().trim())
     .filter(Boolean)
-    .slice(0, 2)
+    .slice(0, 5)
 }
 
 // ─── Attempt 1: Groq (fast & cheap) via REST API ─────────────────────

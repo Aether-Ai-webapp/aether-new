@@ -120,6 +120,8 @@ function MemoryCard({
 }) {
   const config = typeConfig[memory.type]
   const TypeIcon = config.icon
+  const darkMode = useAetherStore((s) => s.darkMode)
+  const isDark = darkMode
   const displayTitle =
     memory.title || memory.content.split('\n')[0].slice(0, 80) || 'Untitled'
   const contentPreview = memory.content.slice(0, 120).replace(/\n/g, ' ')
@@ -129,7 +131,12 @@ function MemoryCard({
 
   return (
     <motion.div variants={itemVariants}>
-      <Card className="bg-card border-0 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group">
+      <Card className={cn(
+        'shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer group',
+        isDark
+          ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08]'
+          : 'bg-white/80 border border-gray-100 hover:bg-white hover:border-gray-200'
+      )}>
         <CardContent className="p-3 md:p-4 space-y-2.5">
           {/* Top row: type badge + favorite + time */}
           <div className="flex items-center justify-between gap-2">
@@ -244,6 +251,8 @@ function MemoryDetail({
 }) {
   const config = typeConfig[memory.type]
   const TypeIcon = config.icon
+  const darkMode = useAetherStore((s) => s.darkMode)
+  const isDark = darkMode
   const relativeTime = formatDistanceToNow(new Date(memory.createdAt), {
     addSuffix: true,
   })
@@ -320,9 +329,14 @@ function MemoryDetail({
       </div>
 
       {/* Content */}
-      <Card className="bg-card border-0 shadow-sm">
+      <Card className={cn(
+        'shadow-sm',
+        isDark
+          ? 'bg-white/[0.015] border border-white/[0.04]'
+          : 'bg-white/80 border border-gray-100'
+      )}>
         <CardContent className="p-4 md:p-5">
-          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+          <p className={cn('text-sm leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-white/70' : 'text-foreground')}>
             {memory.content}
           </p>
         </CardContent>
@@ -399,9 +413,13 @@ function MemoryDetail({
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             AI Summary
           </p>
-          <Card className="bg-[#6D597A]/5 border-0">
+          <Card className={cn(
+            isDark
+              ? 'bg-purple-500/5 border border-purple-500/10'
+              : 'bg-[#6D597A]/5 border-0'
+          )}>
             <CardContent className="p-4">
-              <p className="text-sm text-foreground/80 leading-relaxed italic">
+              <p className={cn('text-sm leading-relaxed italic', isDark ? 'text-white/50' : 'text-foreground/80')}>
                 {memory.summary}
               </p>
             </CardContent>

@@ -3,6 +3,12 @@
 -- This creates the memories, collections, and memory_collections tables with RLS
 
 -- ============================================================
+-- 0. PGVECTOR EXTENSION (for semantic search / RAG)
+-- ============================================================
+-- Enable the vector extension (required for embedding column)
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+
+-- ============================================================
 -- 1. MEMORIES TABLE
 -- ============================================================
 CREATE TABLE IF NOT EXISTS memories (
@@ -177,3 +183,62 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW
   EXECUTE FUNCTION handle_new_user();
+
+-- ============================================================
+-- 5. EMBEDDING COLUMN & VECTOR INDEX (for semantic search / RAG)
+-- ============================================================
+-- Add embedding column to memories table (768 dims = text-embedding-004 output)
+-- This is idempotent — safe to re-run if the column already exists
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'memories' AND column_name = 'embedding'
+  ) THEN
+    ALTER TABLE memories ADD COLUMN embedding public.vector(768);
+  END IF;
+END $$;
+
+-- HNSW index for fast cosine-similarity search (pgvector ≥ 0.5.0)
+CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories
+  USING hnsw (embedding public.vector_cosine_ops);
+
+-- ============================================================
+-- 6. MATCH_MEMORIES RPC (called from /api/ai/chat for RAG)
+-- ============================================================
+-- Finds the top-N most semantically similar memories for a given user.
+-- Uses the cosine-distance operator `<=>` provided by pgvector.
+CREATE OR REPLACE FUNCTION match_memories(
+  query_embedding public.vector(768),
+  match_user_id UUID,
+  match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  tags TEXT,
+  type TEXT,
+  title TEXT,
+  created_at TIMESTAMPTZ,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    m.id,
+    m.content,
+    m.tags,
+    m.type,
+    m.title,
+    m.created_at,
+    1 - (m.embedding <=> query_embedding) AS similarity
+  FROM memories m
+  WHERE m.user_id = match_user_id
+    AND m.embedding IS NOT NULL
+  ORDER BY m.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;

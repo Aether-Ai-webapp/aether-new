@@ -310,12 +310,20 @@ function CollectionCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const darkMode = useAetherStore((s) => s.darkMode)
+  const isDark = darkMode
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <motion.div variants={cardVariants} whileTap={{ scale: 0.98 }}>
           <Card
-            className="relative overflow-hidden bg-card border-0 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+            className={cn(
+              'relative overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer group',
+              isDark
+                ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08]'
+                : 'bg-white/80 border border-gray-100 hover:bg-white hover:border-gray-200'
+            )}
             onClick={onClick}
           >
             {/* Colored left border */}

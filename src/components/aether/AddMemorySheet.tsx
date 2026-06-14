@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback } from 'react'
-import { FileText, Link2, ImageIcon, Mic, Loader2 } from 'lucide-react'
+import { FileText, Link2, ImageIcon, Mic, Loader2, Crown } from 'lucide-react'
 import { useAetherStore, type MemoryType } from '@/lib/aether-store'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -35,6 +35,10 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   const saveMemory = useAetherStore((s) => s.saveMemory)
   const requireAuth = useAetherStore((s) => s.requireAuth)
   const isAuthenticated = useAetherStore((s) => s.isAuthenticated)
+  const memories = useAetherStore((s) => s.memories)
+
+  // ── Free plan limit ──────────────────────────────────────────────────
+  const FREE_MEMORY_LIMIT = 15
 
   // Text tab state
   const [title, setTitle] = useState('')
@@ -88,6 +92,14 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
   }, [url])
 
   const handleSave = useCallback(async () => {
+    // ── Free plan paywall: block saves at 15 memories ──────────────
+    if (memories.length >= FREE_MEMORY_LIMIT) {
+      toast.error('Free limit reached — upgrade to Pro for unlimited memories', {
+        icon: <Crown className="size-4" />,
+      })
+      return
+    }
+
     const type = activeTab as MemoryType
     let memoryTitle = ''
     let memoryContent = ''
@@ -126,6 +138,12 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
         })
         if (result) {
           toast.success('Memory saved!')
+          // Generate embedding in background (fire-and-forget)
+          fetch('/api/generate-embedding', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ memoryId: result.id, content: result.content }),
+          }).catch(() => { /* silent — non-blocking */ })
         }
       })
       handleClose()
@@ -144,6 +162,12 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
       if (result) {
         handleClose()
         toast.success('Memory saved!')
+        // Generate embedding in background (fire-and-forget)
+        fetch('/api/generate-embedding', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memoryId: result.id, content: result.content }),
+        }).catch(() => { /* silent — non-blocking */ })
       } else {
         toast.error('Failed to save memory')
       }
@@ -152,7 +176,7 @@ export function AddMemorySheet({ open, onOpenChange }: AddMemorySheetProps) {
     } finally {
       setIsSaving(false)
     }
-  }, [activeTab, title, content, linkTitle, url, isAuthenticated, requireAuth, saveMemory, handleClose])
+  }, [activeTab, title, content, linkTitle, url, isAuthenticated, requireAuth, saveMemory, handleClose, memories.length, FREE_MEMORY_LIMIT])
 
   const isSaveDisabled = () => {
     if (isSaving) return true

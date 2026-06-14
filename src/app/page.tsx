@@ -8,8 +8,6 @@ import { AskAether } from '@/components/aether/AskAether'
 import { Collections } from '@/components/aether/Collections'
 import { Memories } from '@/components/aether/Memories'
 import { Settings } from '@/components/aether/Settings'
-import { AuthModal } from '@/components/aether/AuthModal'
-
 function ViewRouter() {
   const currentView = useAetherStore((s) => s.currentView)
 
@@ -50,7 +48,6 @@ export default function Home() {
       <AppShell>
         <ViewRouter />
       </AppShell>
-      <AuthModal />
     </DataLoader>
   )
 }

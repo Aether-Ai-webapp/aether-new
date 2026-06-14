@@ -105,7 +105,35 @@ function mapSupabaseCollection(row: SupabaseCollectionRow): Collection {
   }
 }
 
-// ─── Keyword-based auto-tagging ──────────────────────────────────────
+// ─── Smart Token Saver: Local, free, instant tagging ──────────────────
+function getLocalTags(text: string): string[] {
+  const lower = text.toLowerCase()
+  const tags: string[] = []
+
+  // URL detection → 'link'
+  if (/https?:\/\//.test(lower)) {
+    tags.push('link')
+  }
+
+  // Task words → 'task'
+  if (/\b(todo|remind|need to|must|buy)\b/.test(lower)) {
+    tags.push('task')
+  }
+
+  // Person/personal words → 'personal'
+  if (/\b(i |me |with |call|email)\b/.test(lower)) {
+    tags.push('personal')
+  }
+
+  // Question/idea words → 'idea'
+  if (/\b(what|how|why|who)\b/.test(lower)) {
+    tags.push('idea')
+  }
+
+  return tags.slice(0, 5)
+}
+
+// ─── Extended keyword-based auto-tagging (richer, for AI fallback) ───
 function autoGenerateTags(content: string, title: string): string[] {
   const text = `${title} ${content}`.toLowerCase()
   const tagMap: Record<string, string[]> = {
@@ -200,8 +228,20 @@ interface AetherState {
   saveMemory: (data: { type: MemoryType; title: string; content: string; sourceUrl?: string | null; tags?: string[]; collectionIds?: string[] }) => Promise<Memory | null>
   saveCollection: (data: { name: string; color?: string; icon?: string }) => Promise<Collection | null>
 
+  // Delete memory from DB
+  deleteMemoryFromDB: (id: string) => Promise<void>
+
   // Background AI auto-tagging (non-blocking)
   backgroundAutoTag: (memoryId: string, content: string, title: string) => Promise<void>
+
+  // Background AI summary generation (non-blocking)
+  backgroundAutoSummary: (memoryId: string, content: string) => Promise<void>
+
+  // Background link content reading (non-blocking)
+  backgroundReadLink: (memoryId: string, url: string) => Promise<void>
+
+  // Background embedding generation for semantic search (non-blocking)
+  backgroundGenerateEmbedding: (memoryId: string, content: string) => Promise<void>
 }
 
 export const useAetherStore = create<AetherState>((set, get) => ({
@@ -325,10 +365,8 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         const data = await res.json()
         if (data.authenticated && data.user) {
           set({ user: data.user, isAuthenticated: true })
-          // Check Supabase tables + immediately fetch data
+          // Check Supabase tables + fetch data
           get().checkSupabaseTables()
-          get().fetchMemories()
-          get().fetchCollections()
           return
         }
       }
@@ -412,6 +450,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
 
   // ── Fetch Memories ──────────────────────────────────────────────────
   fetchMemories: async () => {
+    set({ isLoading: true })
     const state = get()
     if (state.isAuthenticated && state.supabaseReady) {
       try {
@@ -428,7 +467,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         if (error) throw error
 
         const memories = (data as SupabaseMemoryRow[]).map(mapSupabaseMemory)
-        set({ memories })
+        set({ memories, isLoading: false })
         return
       } catch {
         // Fall through to Prisma API
@@ -440,11 +479,13 @@ export const useAetherStore = create<AetherState>((set, get) => ({
       const res = await fetch('/api/memories')
       if (res.ok) {
         const memories = await res.json()
-        set({ memories })
+        set({ memories, isLoading: false })
+        return
       }
     } catch (e) {
       console.error('Failed to fetch memories:', e)
     }
+    set({ isLoading: false })
   },
 
   // ── Fetch Collections ───────────────────────────────────────────────
@@ -482,6 +523,34 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     } catch (e) {
       console.error('Failed to fetch collections:', e)
     }
+  },
+
+  // ── Delete Memory from DB (Supabase or Prisma) ─────────────────────
+  deleteMemoryFromDB: async (id: string) => {
+    const state = get()
+
+    // Authenticated + Supabase: delete from Supabase
+    if (state.isAuthenticated && state.supabaseReady) {
+      try {
+        const supabase = await getSupabaseBrowser()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          await supabase.from('memories').delete().eq('id', id)
+        }
+      } catch {
+        // Fall through to Prisma API
+      }
+    }
+
+    // Also try Prisma API (works for both local and authenticated users)
+    try {
+      await fetch(`/api/memories/${id}`, { method: 'DELETE' })
+    } catch {
+      // Silent fail
+    }
+
+    // Remove from local state
+    get().deleteMemory(id)
   },
 
   // ── Background AI auto-tagging (non-blocking) ──────────────────────
@@ -534,16 +603,159 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     }
   },
 
-  // ── Save Memory (Supabase-aware, optimistic UI) ─────────────────────
+  // ── Background AI summary generation (non-blocking) ──────────────────
+  backgroundAutoSummary: async (memoryId: string, content: string) => {
+    try {
+      const res = await fetch('/api/ai/summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content.slice(0, 1000) }),
+      })
+
+      if (!res.ok) return
+
+      const { summary } = await res.json()
+      if (!summary?.trim()) return
+
+      const state = get()
+
+      // Update in Supabase if authenticated + ready
+      if (state.isAuthenticated && state.supabaseReady) {
+        try {
+          const supabase = await getSupabaseBrowser()
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            await supabase
+              .from('memories')
+              .update({ summary })
+              .eq('id', memoryId)
+          }
+        } catch {
+          // Silently fail
+        }
+      } else {
+        // Update via Prisma API
+        try {
+          await fetch(`/api/memories/${memoryId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ summary }),
+          })
+        } catch {
+          // Silently fail
+        }
+      }
+
+      // Update the local state so summary appears immediately
+      get().updateMemory(memoryId, { summary })
+    } catch {
+      // Non-blocking: never fail the save flow
+    }
+  },
+
+  // ── Background link content reading (non-blocking) ──────────────────
+  backgroundReadLink: async (memoryId: string, url: string) => {
+    try {
+      const res = await fetch('/api/ai/read-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+
+      if (!res.ok) return
+
+      const { title, content, description } = await res.json()
+      if (!content?.trim()) return
+
+      const state = get()
+
+      // Build enriched content: keep original URL + append extracted content
+      const enrichedContent = `${url}\n\n---\n\n${content}`.slice(0, 3000)
+
+      // Update in Supabase if authenticated + ready
+      if (state.isAuthenticated && state.supabaseReady) {
+        try {
+          const supabase = await getSupabaseBrowser()
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session) {
+            const updateData: Record<string, string> = { content: enrichedContent }
+            if (title?.trim()) updateData.title = title
+            if (description?.trim()) updateData.summary = description
+            await supabase
+              .from('memories')
+              .update(updateData)
+              .eq('id', memoryId)
+          }
+        } catch {
+          // Silently fail
+        }
+      } else {
+        // Update via Prisma API
+        try {
+          const updateData: Record<string, unknown> = { content: enrichedContent }
+          if (title?.trim()) updateData.title = title
+          if (description?.trim()) updateData.summary = description
+          await fetch(`/api/memories/${memoryId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData),
+          })
+        } catch {
+          // Silently fail
+        }
+      }
+
+      // Update local state
+      const localUpdate: Partial<Memory> = { content: enrichedContent }
+      if (title?.trim()) localUpdate.title = title
+      if (description?.trim()) localUpdate.summary = description
+      get().updateMemory(memoryId, localUpdate)
+
+      // After reading the link, also tag and summarize it with AI
+      get().backgroundAutoTag(memoryId, enrichedContent, title || '')
+      get().backgroundAutoSummary(memoryId, enrichedContent)
+      get().backgroundGenerateEmbedding(memoryId, enrichedContent)
+    } catch {
+      // Non-blocking: never fail the save flow
+    }
+  },
+
+  // ── Background embedding generation for semantic search (non-blocking) ──
+  backgroundGenerateEmbedding: async (memoryId: string, content: string) => {
+    try {
+      await fetch('/api/generate-embedding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memoryId, content: content.slice(0, 2000) }),
+      })
+      // Success is silent — the embedding is now stored in Supabase
+    } catch {
+      // Non-blocking: never fail the save flow
+    }
+  },
+
+  // ── Save Memory (Supabase-aware, optimistic UI, token-saving) ────────
   saveMemory: async (data) => {
     const state = get()
     const { type, title, content, sourceUrl, tags, collectionIds } = data
 
-    // Auto-generate keyword-based tags immediately (optimistic UI)
+    // ── STEP 1: Smart Token Saver — local, free, instant tags ──────────
+    const fullText = `${title || ''} ${content || ''}`.trim()
+    const localTags = getLocalTags(fullText)
+    const wordCount = fullText.split(/\s+/).filter(Boolean).length
+
+    // If <20 words AND local tags found: use only local tags, skip AI
+    const isShortNote = wordCount < 20 && localTags.length > 0
+
+    // Merge tags: caller tags > local tags > extended auto tags
     let finalTags = tags
-    if ((!tags || tags.length === 0) && content?.trim()) {
-      const autoTags = autoGenerateTags(content, title || '')
-      if (autoTags.length > 0) finalTags = autoTags
+    if (!tags || tags.length === 0) {
+      if (localTags.length > 0) {
+        finalTags = localTags
+      } else if (content?.trim()) {
+        const autoTags = autoGenerateTags(content, title || '')
+        if (autoTags.length > 0) finalTags = autoTags
+      }
     }
 
     // ── Authenticated + Supabase ready: save to Supabase directly ──
@@ -583,9 +795,24 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         // Optimistic UI: add to store instantly
         get().addMemory(memory)
 
-        // ── Background: call Gemini auto-tag and update ──
-        if (content?.trim()) {
+        // ── STEP 2: Deferred AI tagging — ONLY if not a short note with local tags ──
+        if (content?.trim() && !isShortNote) {
           get().backgroundAutoTag(memory.id, content, title || '')
+        }
+
+        // ── STEP 3: AI summary generation (background, non-blocking) ──
+        if (content?.trim() && !isShortNote) {
+          get().backgroundAutoSummary(memory.id, content)
+        }
+
+        // ── STEP 4: If this is a link, read the URL content (background, non-blocking) ──
+        if (sourceUrl?.trim()) {
+          get().backgroundReadLink(memory.id, sourceUrl)
+        }
+
+        // ── STEP 5: Generate embedding for semantic search (background, non-blocking) ──
+        if (content?.trim()) {
+          get().backgroundGenerateEmbedding(memory.id, content)
         }
 
         return memory
@@ -612,9 +839,24 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         const memory: Memory = await res.json()
         get().addMemory(memory)
 
-        // ── Background: call Gemini auto-tag and update ──
-        if (content?.trim()) {
+        // ── STEP 2: Deferred AI tagging — ONLY if not a short note with local tags ──
+        if (content?.trim() && !isShortNote) {
           get().backgroundAutoTag(memory.id, content, title || '')
+        }
+
+        // ── STEP 3: AI summary generation (background, non-blocking) ──
+        if (content?.trim() && !isShortNote) {
+          get().backgroundAutoSummary(memory.id, content)
+        }
+
+        // ── STEP 4: If this is a link, read the URL content (background, non-blocking) ──
+        if (sourceUrl?.trim()) {
+          get().backgroundReadLink(memory.id, sourceUrl)
+        }
+
+        // ── STEP 5: Generate embedding for semantic search (background, non-blocking) ──
+        if (content?.trim()) {
+          get().backgroundGenerateEmbedding(memory.id, content)
         }
 
         return memory

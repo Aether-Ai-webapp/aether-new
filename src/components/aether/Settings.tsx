@@ -78,11 +78,9 @@ const defaultProfile = {
 
 // ─── Feature list for plan comparison ───────────────────────────────
 const planFeatures = [
-  { label: 'Memories', free: 'Up to 100', pro: 'Unlimited' },
-  { label: 'Collections', free: 'Up to 5', pro: 'Unlimited' },
-  { label: 'AI Chat', free: '10 / day', pro: 'Unlimited' },
-  { label: 'File uploads', free: '5 MB', pro: '100 MB' },
-  { label: 'Export data', free: true, pro: true },
+  { label: 'Memories', free: 'Up to 15', pro: 'Unlimited' },
+  { label: 'AI Chat', free: '3 / day', pro: 'Unlimited' },
+  { label: 'Auto-tagging', free: 'Basic', pro: 'Advanced' },
   { label: 'Priority support', free: false, pro: true },
 ]
 
@@ -156,10 +154,46 @@ export function Settings() {
     setEditDialogOpen(true)
   }
 
-  const handleSaveProfile = () => {
-    setProfile({ name: editName.trim() || defaultProfile.name, email: editEmail.trim() || defaultProfile.email })
+  const handleSaveProfile = async () => {
+    const newName = editName.trim() || defaultProfile.name
+    const newEmail = editEmail.trim() || defaultProfile.email
+
+    // Update local state immediately
+    setProfile({ name: newName, email: newEmail })
     setEditDialogOpen(false)
-    toast.success('Profile updated')
+
+    // Update Supabase auth if authenticated
+    if (isAuthenticated) {
+      try {
+        const { createClient } = await import('@/lib/supabase/browser')
+        const supabase = createClient()
+
+        // Update name in user metadata
+        const { error: nameError } = await supabase.auth.updateUser({
+          data: { full_name: newName }
+        })
+        if (nameError) throw nameError
+
+        // Update email if it changed
+        if (newEmail !== profile.email) {
+          const { error: emailError } = await supabase.auth.updateUser({
+            email: newEmail
+          })
+          if (emailError) throw emailError
+        }
+
+        // Update the store user
+        useAetherStore.setState((state) => ({
+          user: state.user ? { ...state.user, name: newName, email: newEmail } : null
+        }))
+
+        toast.success('Profile updated!')
+      } catch {
+        toast.error('Failed to update profile. Please try again.')
+      }
+    } else {
+      toast.success('Profile updated!')
+    }
   }
 
   const handleDarkModeToggle = () => {
@@ -167,8 +201,59 @@ export function Settings() {
     toast.success(darkMode ? 'Light mode enabled' : 'Dark mode enabled')
   }
 
-  const handleExportData = () => {
-    toast('Coming soon', { description: 'Data export will be available in a future update.' })
+  const handleExportPDF = () => {
+    const memoriesHTML = memories.map((m) => {
+      const date = new Date(m.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      const tags = m.tags.length > 0
+        ? `<div style="margin-top: 6px;">${m.tags.map(t => `<span style="display: inline-block; background: #f3e8ff; color: #7c3aed; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; margin-right: 3px; text-transform: uppercase; letter-spacing: 0.5px;">${t}</span>`).join('')}</div>`
+        : ''
+      const summary = m.summary
+        ? `<div style="background: #faf5ff; border-left: 3px solid #7c3aed; padding: 10px 14px; margin-top: 8px; border-radius: 0 6px 6px 0;"><p style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #7c3aed; margin: 0 0 4px 0;">AI Summary</p><p style="font-size: 12px; line-height: 1.5; color: #374151; margin: 0;">${m.summary}</p></div>`
+        : ''
+      const typeLabel = m.type !== 'text' ? `<span style="display: inline-block; background: #ede9fe; color: #6d28d9; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; margin-left: 6px; text-transform: uppercase;">${m.type}</span>` : ''
+
+      return `
+        <div style="margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid #f3f4f6;">
+          <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 4px 0; color: #1a1a2e;">${m.title || 'Untitled Memory'}${typeLabel}</h3>
+          <p style="font-size: 11px; color: #9ca3af; margin: 0;">${date}</p>
+          ${tags}
+          ${summary}
+          <p style="font-size: 13px; line-height: 1.6; color: #4b5563; margin-top: 8px; white-space: pre-wrap;">${m.content}</p>
+          ${m.sourceUrl ? `<p style="font-size: 11px; color: #7c3aed; margin-top: 6px; word-break: break-all;">🔗 ${m.sourceUrl}</p>` : ''}
+        </div>
+      `
+    }).join('')
+
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Aether — Memory Export</title>
+            <style>
+              @media print {
+                @page { margin: 15mm; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              }
+              body { font-family: system-ui, -apple-system, sans-serif; color: #1a1a2e; max-width: 750px; margin: 0 auto; padding: 40px 30px; }
+            </style>
+          </head>
+          <body>
+            <div style="border-bottom: 3px solid #7c3aed; padding-bottom: 16px; margin-bottom: 32px;">
+              <h1 style="font-size: 28px; font-weight: 800; margin: 0; color: #1a1a2e;">✨ Aether</h1>
+              <p style="font-size: 13px; color: #6b7280; margin: 4px 0 0 0;">Your Second Brain — Memory Export</p>
+              <p style="font-size: 11px; color: #9ca3af; margin: 4px 0 0 0;">Exported on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${memories.length} memories</p>
+            </div>
+            ${memoriesHTML}
+            <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center;">
+              <p style="font-size: 10px; color: #d1d5db; margin: 0;">Exported from Aether — Your Second Brain</p>
+            </div>
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+      setTimeout(() => { printWindow.print() }, 400)
+    }
   }
 
   const handleClearAllData = () => {
@@ -450,7 +535,7 @@ export function Settings() {
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Basic features for personal use
+                  Up to 15 memories · 3 AI chats/day
                 </p>
               </div>
               <Button
@@ -545,10 +630,10 @@ export function Settings() {
               <Button
                 variant="outline"
                 className="gap-2 flex-1"
-                onClick={handleExportData}
+                onClick={handleExportPDF}
               >
                 <Download className="size-4" />
-                Export Data
+                Export PDF
               </Button>
 
               <AlertDialog>
