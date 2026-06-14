@@ -1,0 +1,760 @@
+     1→'use client'
+     2→
+     3→import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import { formatDistanceToNow } from 'date-fns'
+     6→import {
+     7→  Mic,
+     8→  Send,
+     9→  Sparkles,
+    10→  X,
+    11→  Trash2,
+    12→  Crown,
+    13→  Link2,
+    14→  FileText,
+    15→  CheckCircle2,
+    16→} from 'lucide-react'
+    17→import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+    18→import { cn } from '@/lib/utils'
+    19→import { toast } from 'sonner'
+    20→import { PaywallModal } from '@/components/aether/PaywallModal'
+    21→
+    22→// ─── Helpers ────────────────────────────────────────────────────────
+    23→function getGreeting(): string {
+    24→  const hour = new Date().getHours()
+    25→  if (hour < 12) return 'Good morning'
+    26→  if (hour < 17) return 'Good afternoon'
+    27→  return 'Good evening'
+    28→}
+    29→
+    30→function detectContentType(text: string): 'link' | 'task' | 'note' {
+    31→  const lower = text.toLowerCase()
+    32→  if (/https?:\/\//.test(lower) || /\bwww\./.test(lower)) return 'link'
+    33→  if (/\b(todo|remind|need to|buy|must)\b/.test(lower)) return 'task'
+    34→  return 'note'
+    35→}
+    36→
+    37→function mapToMemoryType(detected: 'link' | 'task' | 'note'): MemoryType {
+    38→  if (detected === 'link') return 'link'
+    39→  return 'text'
+    40→}
+    41→
+    42→// ─── Category Config ─────────────────────────────────────────────────
+    43→const categoryConfig = {
+    44→  link: { label: 'Links', icon: Link2, color: 'text-emerald-400' },
+    45→  task: { label: 'Tasks', icon: CheckCircle2, color: 'text-amber-400' },
+    46→  note: { label: 'Notes', icon: FileText, color: 'text-purple-400' },
+    47→}
+    48→
+    49→// ─── Particle Burst Engine ───────────────────────────────────────────
+    50→// Generates randomized particles that burst upward from the capture bar
+    51→// on every save. Pure Framer Motion — no canvas, no dependencies.
+    52→
+    53→interface Particle {
+    54→  id: number
+    55→  x: number   // horizontal offset from center (−50 to 50)
+    56→  y: number   // vertical travel distance (negative = upward)
+    57→  scale: number
+    58→  rotate: number
+    59→  duration: number
+    60→  color: string
+    61→  size: number
+    62→}
+    63→
+    64→function generateParticles(count: number = 12): Particle[] {
+    65→  const colors = [
+    66→    'rgba(139, 92, 246, 0.8)',   // purple
+    67→    'rgba(167, 139, 250, 0.7)',  // violet
+    68→    'rgba(192, 132, 252, 0.6)',  // fuchsia-light
+    69→    'rgba(59, 130, 246, 0.6)',   // blue
+    70→    'rgba(236, 72, 153, 0.5)',   // pink
+    71→  ]
+    72→  return Array.from({ length: count }, (_, i) => ({
+    73→    id: i,
+    74→    x: (Math.random() - 0.5) * 120,
+    75→    y: -(60 + Math.random() * 100),
+    76→    scale: 0.4 + Math.random() * 0.8,
+    77→    rotate: (Math.random() - 0.5) * 360,
+    78→    duration: 0.5 + Math.random() * 0.5,
+    79→    color: colors[Math.floor(Math.random() * colors.length)],
+    80→    size: 4 + Math.random() * 6,
+    81→  }))
+    82→}
+    83→
+    84→function ParticleBurst({ particles, isDark }: { particles: Particle[]; isDark: boolean }) {
+    85→  return (
+    86→    <div className="absolute inset-0 pointer-events-none overflow-visible z-20">
+    87→      {particles.map((p) => (
+    88→        <motion.div
+    89→          key={p.id}
+    90→          initial={{ opacity: 1, x: 0, y: 0, scale: 0 }}
+    91→          animate={{
+    92→            opacity: [1, 1, 0],
+    93→            x: p.x,
+    94→            y: p.y,
+    95→            scale: [0, p.scale, 0],
+    96→            rotate: p.rotate,
+    97→          }}
+    98→          transition={{
+    99→            duration: p.duration,
+   100→            ease: [0.22, 1, 0.36, 1],
+   101→          }}
+   102→          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+   103→          style={{
+   104→            width: p.size,
+   105→            height: p.size,
+   106→            backgroundColor: p.color,
+   107→            boxShadow: isDark
+   108→              ? `0 0 ${p.size * 2}px ${p.color}`
+   109→              : `0 0 ${p.size}px ${p.color}`,
+   110→          }}
+   111→        />
+   112→      ))}
+   113→    </div>
+   114→  )
+   115→}
+   116→
+   117→// ─── Capture Feedback Card ──────────────────────────────────────────
+   118→// Shows "Captured. Cleaned up. Sent to [Category]." after save
+   119→
+   120→interface CaptureFeedback {
+   121→  category: 'link' | 'task' | 'note'
+   122→}
+   123→
+   124→function CaptureFeedbackCard({ feedback, isDark }: { feedback: CaptureFeedback; isDark: boolean }) {
+   125→  const config = categoryConfig[feedback.category]
+   126→  const Icon = config.icon
+   127→
+   128→  return (
+   129→    <motion.div
+   130→      initial={{ opacity: 0, y: 12, scale: 0.95, filter: 'blur(4px)' }}
+   131→      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+   132→      exit={{ opacity: 0, y: -8, scale: 0.98, filter: 'blur(2px)', transition: { duration: 0.3, ease: 'easeInOut' } }}
+   133→      transition={{ type: 'spring', stiffness: 400, damping: 25, delay: 0.15 }}
+   134→      className={cn(
+   135→        'mt-4 inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl',
+   136→        isDark
+   137→          ? 'bg-white/[0.04] border border-white/[0.06] shadow-[0_0_20px_-5px_rgba(139,92,246,0.2)]'
+   138→          : 'bg-white border border-purple-100 shadow-lg shadow-purple-500/10'
+   139→      )}
+   140→    >
+   141→      <div className={cn(
+   142→        'size-6 rounded-md flex items-center justify-center',
+   143→        isDark ? 'bg-purple-500/15' : 'bg-purple-50'
+   144→      )}>
+   145→        <Icon className={cn('size-3.5', config.color)} />
+   146→      </div>
+   147→      <div className="flex items-center gap-1.5 text-sm">
+   148→        <span className={cn(isDark ? 'text-white/40' : 'text-gray-400')}>Captured. Cleaned up. Sent to</span>
+   149→        <span className={cn('font-semibold', isDark ? 'text-purple-400' : 'text-purple-600')}>
+   150→          {config.label}
+   151→        </span>
+   152→      </div>
+   153→    </motion.div>
+   154→  )
+   155→}
+   156→
+   157→// ─── Shimmer Border for New Cards ───────────────────────────────────
+   158→// A one-time shimmer sweep across the card border on entrance
+   159→
+   160→function ShimmerBorder({ isDark }: { isDark: boolean }) {
+   161→  return (
+   162→    <motion.div
+   163→      initial={{ x: '-100%' }}
+   164→      animate={{ x: '200%' }}
+   165→      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
+   166→      className={cn(
+   167→        'absolute inset-0 pointer-events-none z-10 overflow-hidden rounded-xl',
+   168→      )}
+   169→    >
+   170→      <div
+   171→        className="absolute inset-0"
+   172→        style={{
+   173→          background: isDark
+   174→            ? 'linear-gradient(90deg, transparent 0%, rgba(139,92,246,0.15) 40%, rgba(192,132,252,0.25) 50%, rgba(139,92,246,0.15) 60%, transparent 100%)'
+   175→            : 'linear-gradient(90deg, transparent 0%, rgba(139,92,246,0.1) 40%, rgba(167,139,250,0.2) 50%, rgba(139,92,246,0.1) 60%, transparent 100%)',
+   176→        }}
+   177→      />
+   178→    </motion.div>
+   179→  )
+   180→}
+   181→
+   182→// ─── Main Dashboard Component ────────────────────────────────────────
+   183→export function Dashboard() {
+   184→  const {
+   185→    memories,
+   186→    saveMemory,
+   187→    fetchMemories,
+   188→    deleteMemoryFromDB,
+   189→    darkMode,
+   190→    isLoading,
+   191→  } = useAetherStore()
+   192→
+   193→  const [captureText, setCaptureText] = useState('')
+   194→  const [isSaving, setIsSaving] = useState(false)
+   195→  const [isJustSaved, setIsJustSaved] = useState(false)
+   196→
+   197→  // ── Dopamine Engine state ──────────────────────────────────────────
+   198→  const [particles, setParticles] = useState<Particle[]>([])
+   199→  const [captureFeedback, setCaptureFeedback] = useState<CaptureFeedback | null>(null)
+   200→  const [lastSavedId, setLastSavedId] = useState<string | null>(null)
+   201→
+   202→  const justSavedTimer = useRef<ReturnType<typeof setTimeout>>()
+   203→  const feedbackTimer = useRef<ReturnType<typeof setTimeout>>()
+   204→
+   205→  // Hydration guard
+   206→  const [mounted, setMounted] = useState(false)
+   207→  useEffect(() => { setMounted(true) }, [])
+   208→
+   209→  // Skeleton loading
+   210→  const [hasFetched, setHasFetched] = useState(false)
+   211→  const prevMemoriesLength = useRef(memories.length)
+   212→
+   213→  useEffect(() => {
+   214→    if (memories.length > 0 && !hasFetched) setHasFetched(true)
+   215→  }, [memories.length, hasFetched])
+   216→
+   217→  useEffect(() => {
+   218→    if (!isLoading && !hasFetched) {
+   219→      const timer = setTimeout(() => setHasFetched(true), 600)
+   220→      return () => clearTimeout(timer)
+   221→    }
+   222→  }, [isLoading, hasFetched])
+   223→
+   224→  useEffect(() => {
+   225→    prevMemoriesLength.current = memories.length
+   226→  }, [memories.length])
+   227→
+   228→  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
+   229→  const [isDeleting, setIsDeleting] = useState(false)
+   230→  const [showPaywall, setShowPaywall] = useState(false)
+   231→
+   232→  const FREE_MEMORY_LIMIT = 15
+   233→
+   234→  // Deterministic daily recap
+   235→  const dailyRecap = useMemo(() => {
+   236→    if (memories.length === 0) return ''
+   237→    const dayIndex = new Date().getDate() % memories.length
+   238→    return memories[dayIndex].content
+   239→  }, [memories])
+   240→
+   241→  // ── Capture handler (Dopamine Engine wired in) ────────────────────
+   242→  const handleCapture = useCallback(async () => {
+   243→    const text = captureText.trim()
+   244→    if (!text || isSaving) return
+   245→
+   246→    if (memories.length >= FREE_MEMORY_LIMIT) {
+   247→      setShowPaywall(true)
+   248→      return
+   249→    }
+   250→
+   251→    const detectedType = detectContentType(text)
+   252→    const memoryType = mapToMemoryType(detectedType)
+   253→
+   254→    // 1. Clear the input bar immediately
+   255→    setCaptureText('')
+   256→
+   257→    // 2. 🔥 FIRE THE PARTICLE BURST — instant visual reward
+   258→    setParticles(generateParticles(14))
+   259→    setTimeout(() => setParticles([]), 1200)
+   260→
+   261→    // 3. 🔥 FIRE THE CAPTURE FEEDBACK CARD — "Captured. Cleaned up. Sent to [Category]."
+   262→    setCaptureFeedback({ category: detectedType })
+   263→    if (feedbackTimer.current) clearTimeout(feedbackTimer.current)
+   264→    feedbackTimer.current = setTimeout(() => setCaptureFeedback(null), 2500)
+   265→
+   266→    // 4. Purple glow pulse on the capture bar
+   267→    setIsJustSaved(true)
+   268→    if (justSavedTimer.current) clearTimeout(justSavedTimer.current)
+   269→    justSavedTimer.current = setTimeout(() => setIsJustSaved(false), 600)
+   270→
+   271→    // 5. Actually save to the backend
+   272→    setIsSaving(true)
+   273→    try {
+   274→      const savedMemory = await saveMemory({
+   275→        type: memoryType,
+   276→        title: text.split('\n')[0].slice(0, 80) || 'Quick Note',
+   277→        content: text,
+   278→        sourceUrl: detectedType === 'link' ? text.trim() : null,
+   279→      })
+   280→      await fetchMemories()
+   281→
+   282→      // 6. Track the newly saved memory ID for the shimmer entrance
+   283→      if (savedMemory) {
+   284→        setLastSavedId(savedMemory.id)
+   285→        // Clear shimmer after entrance animation completes
+   286→        setTimeout(() => setLastSavedId(null), 1500)
+   287→      }
+   288→
+   289→      // 7. Background embedding (fire-and-forget)
+   290→      if (savedMemory) {
+   291→        fetch('/api/generate-embedding', {
+   292→          method: 'POST',
+   293→          headers: { 'Content-Type': 'application/json' },
+   294→          body: JSON.stringify({ memoryId: savedMemory.id, content: savedMemory.content }),
+   295→        }).catch(() => {})
+   296→      }
+   297→    } catch {
+   298→      // silent
+   299→    } finally {
+   300→      setIsSaving(false)
+   301→    }
+   302→  }, [captureText, isSaving, saveMemory, fetchMemories, memories.length, FREE_MEMORY_LIMIT])
+   303→
+   304→  const handleCaptureKeyDown = useCallback((e: React.KeyboardEvent) => {
+   305→    if (e.key === 'Enter' && !e.shiftKey) {
+   306→      e.preventDefault()
+   307→      handleCapture()
+   308→    }
+   309→  }, [handleCapture])
+   310→
+   311→  const handleMicClick = useCallback(() => {
+   312→    toast.info('Voice recording coming soon!', { icon: <Mic className="size-4" /> })
+   313→  }, [])
+   314→
+   315→  const handleDeleteMemory = useCallback(async () => {
+   316→    if (!selectedMemory || isDeleting) return
+   317→    setIsDeleting(true)
+   318→    try {
+   319→      await deleteMemoryFromDB(selectedMemory.id)
+   320→      setSelectedMemory(null)
+   321→    } catch {
+   322→      // keep modal open
+   323→    } finally {
+   324→      setIsDeleting(false)
+   325→    }
+   326→  }, [selectedMemory, isDeleting, deleteMemoryFromDB])
+   327→
+   328→  const displayMemories = useMemo(() => {
+   329→    return [...memories]
+   330→      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+   331→      .slice(0, 5)
+   332→  }, [memories])
+   333→
+   334→  const isDark = darkMode
+   335→
+   336→  return (
+   337→    <motion.div
+   338→      initial={{ opacity: 0, y: 20 }}
+   339→      animate={{ opacity: 1, y: 0 }}
+   340→      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+   341→      className={cn(
+   342→        'min-h-screen relative overflow-hidden flex flex-col items-center pt-12 pb-10 px-4',
+   343→        isDark ? 'bg-[#06060a] text-white' : 'bg-gradient-to-b from-slate-50 to-white text-gray-900'
+   344→      )}
+   345→    >
+   346→      {/* ── Greeting ──────────────────────────────────────────────── */}
+   347→      <section className="relative z-10 w-full max-w-2xl">
+   348→        <h1 className={cn(
+   349→          'text-3xl font-bold tracking-tight mb-8',
+   350→          isDark ? 'text-white' : 'text-gray-900'
+   351→        )}>
+   352→          {mounted ? getGreeting() : ''}
+   353→        </h1>
+   354→      </section>
+   355→
+   356→      {/* ── Gravity Capture Bar ───────────────────────────────────── */}
+   357→      <section className="relative z-10 w-full max-w-2xl mx-auto mb-10">
+   358→        <div className={cn(
+   359→          'relative rounded-2xl p-1.5 transition-all duration-500',
+   360→          isDark
+   361→            ? isJustSaved
+   362→              ? 'bg-white/[0.04] border border-purple-500/40 shadow-[0_0_0_1px_rgba(139,92,246,0.5),0_0_80px_-10px_rgba(139,92,246,0.6)]'
+   363→              : 'bg-white/[0.02] border border-white/[0.06] shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_0_40px_-10px_rgba(139,92,246,0.15)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_80px_-20px_rgba(139,92,246,0.5)] focus-within:border-purple-500/30'
+   364→            : isJustSaved
+   365→              ? 'bg-white border border-purple-300/50 shadow-[0_0_0_1px_rgba(139,92,246,0.4),0_0_60px_-10px_rgba(139,92,246,0.3)]'
+   366→              : 'bg-white border border-gray-200 shadow-[0_0_0_1px_rgba(0,0,0,0.03),0_0_40px_-10px_rgba(139,92,246,0.08)] focus-within:shadow-[0_0_0_1px_rgba(139,92,246,0.3),0_0_60px_-15px_rgba(139,92,246,0.15)] focus-within:border-purple-300/40'
+   367→        )}>
+   368→          <div className="flex items-center gap-2">
+   369→            <input
+   370→              value={captureText}
+   371→              onChange={(e) => setCaptureText(e.target.value)}
+   372→              onKeyDown={handleCaptureKeyDown}
+   373→              placeholder="Dump a thought, URL, or task... press Enter"
+   374→              disabled={isSaving}
+   375→              className={cn(
+   376→                'w-full bg-transparent text-base focus:outline-none px-4 py-3',
+   377→                isDark
+   378→                  ? 'text-white placeholder:text-white/25'
+   379→                  : 'text-gray-900 placeholder:text-gray-400'
+   380→              )}
+   381→            />
+   382→
+   383→            {/* Mic button */}
+   384→            <button
+   385→              onClick={handleMicClick}
+   386→              className={cn(
+   387→                'flex items-center justify-center size-9 rounded-lg transition-colors duration-150 shrink-0',
+   388→                isDark
+   389→                  ? 'text-white/20 hover:text-white/50 hover:bg-white/[0.04]'
+   390→                  : 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
+   391→              )}
+   392→              aria-label="Voice recording"
+   393→            >
+   394→              <Mic className="size-4" />
+   395→            </button>
+   396→
+   397→            {/* Save/Send button */}
+   398→            <motion.button
+   399→              onClick={handleCapture}
+   400→              disabled={!captureText.trim() || isSaving}
+   401→              whileTap={{ scale: 0.9 }}
+   402→              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+   403→              className={cn(
+   404→                'flex items-center justify-center text-sm font-medium px-4 py-1.5 rounded-lg transition-all duration-200 shrink-0',
+   405→                captureText.trim() && !isSaving
+   406→                  ? isDark
+   407→                    ? 'bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.6)] hover:shadow-[0_0_30px_-5px_rgba(139,92,246,0.8)]'
+   408→                    : 'bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 text-white shadow-[0_0_20px_-5px_rgba(139,92,246,0.4)] hover:shadow-[0_0_30px_-5px_rgba(139,92,246,0.6)]'
+   409→                  : isDark
+   410→                    ? 'bg-white/[0.06] text-white/25'
+   411→                    : 'bg-gray-100 text-gray-400'
+   412→              )}
+   413→            >
+   414→              <Send className="size-4" />
+   415→            </motion.button>
+   416→          </div>
+   417→
+   418→          {/* 🫧 Particle Burst Layer */}
+   419→          <AnimatePresence>
+   420→            {particles.length > 0 && (
+   421→              <ParticleBurst particles={particles} isDark={isDark} />
+   422→            )}
+   423→          </AnimatePresence>
+   424→        </div>
+   425→
+   426→        {/* 🎯 Capture Feedback Card */}
+   427→        <div className="flex justify-center">
+   428→          <AnimatePresence>
+   429→            {captureFeedback && (
+   430→              <CaptureFeedbackCard feedback={captureFeedback} isDark={isDark} />
+   431→            )}
+   432→          </AnimatePresence>
+   433→        </div>
+   434→
+   435→        {/* Free Plan Limit */}
+   436→        {memories.length > 0 && (
+   437→          <div className={cn(
+   438→            'flex items-center justify-center gap-1.5 mt-3',
+   439→            isDark ? 'text-white/20' : 'text-gray-400'
+   440→          )}>
+   441→            {memories.length >= FREE_MEMORY_LIMIT ? (
+   442→              <>
+   443→                <Crown className="size-3 text-purple-500" />
+   444→                <span className={cn('text-[11px] font-medium', isDark ? 'text-purple-400' : 'text-purple-600')}>
+   445→                  Free limit reached — upgrade for unlimited
+   446→                </span>
+   447→              </>
+   448→            ) : memories.length >= FREE_MEMORY_LIMIT - 3 ? (
+   449→              <>
+   450→                <Crown className="size-3" />
+   451→                <span className="text-[11px]">
+   452→                  {FREE_MEMORY_LIMIT - memories.length} memories remaining on Free plan
+   453→                </span>
+   454→              </>
+   455→            ) : (
+   456→              <span className="text-[11px]">
+   457→                {memories.length} / {FREE_MEMORY_LIMIT} free memories
+   458→              </span>
+   459→            )}
+   460→          </div>
+   461→        )}
+   462→      </section>
+   463→
+   464→      {/* ── Daily Recap ───────────────────────────────────────────── */}
+   465→      {dailyRecap && (
+   466→        <section className="relative z-10 w-full max-w-2xl mx-auto mb-8">
+   467→          <div className={cn(
+   468→            'rounded-2xl p-5',
+   469→            isDark
+   470→              ? 'bg-purple-500/5 border border-purple-500/10'
+   471→              : 'bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100/60'
+   472→          )}>
+   473→            <p className={cn(
+   474→              'text-xs font-semibold uppercase tracking-widest mb-2 flex items-center gap-2',
+   475→              isDark ? 'text-purple-400' : 'text-purple-600'
+   476→            )}>
+   477→              <Sparkles className="w-3.5 h-3.5" />
+   478→              Daily Recap
+   479→            </p>
+   480→            <p className={cn(
+   481→              'text-sm',
+   482→              isDark ? 'text-white/30' : 'text-gray-500'
+   483→            )}>
+   484→              {dailyRecap}
+   485→            </p>
+   486→          </div>
+   487→        </section>
+   488→      )}
+   489→
+   490→      {/* ── Memories Feed ──────────────────────────────────────────── */}
+   491→      <section className="relative z-10 w-full max-w-2xl mx-auto space-y-3">
+   492→        {!hasFetched ? (
+   493→          <>
+   494→            {[0, 1, 2].map((i) => (
+   495→              <div
+   496→                key={i}
+   497→                className={cn(
+   498→                  'rounded-xl p-5 animate-pulse',
+   499→                  isDark
+   500→                    ? 'bg-white/[0.02] border border-white/[0.04]'
+   501→                    : 'bg-gray-50 border border-gray-100'
+   502→                )}
+   503→              >
+   504→                <div className="flex items-start gap-4">
+   505→                  <div className={cn(
+   506→                    'size-9 rounded-lg shrink-0',
+   507→                    isDark ? 'bg-white/[0.05]' : 'bg-gray-100'
+   508→                  )} />
+   509→                  <div className="flex-1 space-y-3">
+   510→                    <div className={cn('h-4 rounded w-3/4', isDark ? 'bg-white/[0.05]' : 'bg-gray-100')} />
+   511→                    <div className={cn('h-3 rounded w-1/2', isDark ? 'bg-white/[0.05]' : 'bg-gray-100')} />
+   512→                  </div>
+   513→                </div>
+   514→              </div>
+   515→            ))}
+   516→          </>
+   517→        ) : displayMemories.length === 0 ? (
+   518→          <p className={cn('text-sm mt-20 text-center', isDark ? 'text-white/15' : 'text-gray-300')}>
+   519→            Your mind is clear. Dump a thought above.
+   520→          </p>
+   521→        ) : (
+   522→          <>
+   523→            {displayMemories.map((memory) => (
+   524→              <MemoryCard
+   525→                key={memory.id}
+   526→                memory={memory}
+   527→                isDark={isDark}
+   528→                isNew={memory.id === lastSavedId}
+   529→                onClick={() => setSelectedMemory(memory)}
+   530→              />
+   531→            ))}
+   532→          </>
+   533→        )}
+   534→      </section>
+   535→
+   536→      {/* ── Memory Detail Modal ─────────────────────────────────────── */}
+   537→      <AnimatePresence>
+   538→        {selectedMemory && (
+   539→          <MemoryDetailModal
+   540→            memory={selectedMemory}
+   541→            isDark={isDark}
+   542→            onClose={() => setSelectedMemory(null)}
+   543→            onDelete={handleDeleteMemory}
+   544→            isDeleting={isDeleting}
+   545→          />
+   546→        )}
+   547→      </AnimatePresence>
+   548→
+   549→      <PaywallModal
+   550→        open={showPaywall}
+   551→        onClose={() => setShowPaywall(false)}
+   552→        isDark={isDark}
+   553→      />
+   554→    </motion.div>
+   555→  )
+   556→}
+   557→
+   558→// ─── Memory Card (with shimmer entrance for new cards) ──────────────
+   559→function MemoryCard({ memory, isDark, isNew, onClick }: { memory: Memory; isDark: boolean; isNew: boolean; onClick: () => void }) {
+   560→  const displayTitle =
+   561→    memory.title || memory.content.split('\n')[0].slice(0, 80) || 'Untitled'
+   562→  const relativeTime = formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })
+   563→
+   564→  return (
+   565→    <motion.div
+   566→      initial={isNew
+   567→        ? { opacity: 0, y: 20, scale: 0.95 }
+   568→        : { opacity: 0, y: -20, scale: 0.95 }
+   569→      }
+   570→      animate={{ opacity: 1, y: 0, scale: 1 }}
+   571→      transition={
+   572→        isNew
+   573→          ? { type: 'spring', stiffness: 200, damping: 18, delay: 0.3 }
+   574→          : { type: 'spring', stiffness: 300, damping: 20 }
+   575→      }
+   576→      whileHover={{ y: -2, transition: { type: 'spring', stiffness: 400, damping: 25 } }}
+   577→      whileTap={{ scale: 0.98 }}
+   578→    >
+   579→      <div
+   580→        onClick={onClick}
+   581→        className={cn(
+   582→          'relative overflow-hidden rounded-xl p-5 transition-all duration-300 cursor-pointer group',
+   583→          isNew
+   584→            ? isDark
+   585→              ? 'bg-white/[0.03] border border-purple-500/20 shadow-[0_0_30px_-5px_rgba(139,92,246,0.3)]'
+   586→              : 'bg-white border border-purple-200/60 shadow-lg shadow-purple-500/10'
+   587→            : isDark
+   588→              ? 'bg-white/[0.015] border border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08]'
+   589→              : 'bg-white border border-gray-100 hover:bg-gray-50/80 hover:border-purple-200/60 hover:shadow-lg hover:shadow-purple-500/5'
+   590→        )}
+   591→      >
+   592→        {/* ✨ Shimmer border sweep for newly saved cards */}
+   593→        {isNew && <ShimmerBorder isDark={isDark} />}
+   594→
+   595→        <p className={cn(
+   596→          'text-sm leading-relaxed relative z-0',
+   597→          isDark ? 'text-white/80' : 'text-gray-700'
+   598→        )}>
+   599→          {displayTitle}
+   600→        </p>
+   601→        {memory.tags.length > 0 && (
+   602→          <div className="mt-2 relative z-0">
+   603→            {memory.tags.slice(0, 3).map((tag) => (
+   604→              <span
+   605→                key={tag}
+   606→                className={cn(
+   607→                  'inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mr-1.5 mt-1 uppercase tracking-wider',
+   608→                  isDark
+   609→                    ? 'bg-purple-500/10 text-purple-400'
+   610→                    : 'bg-purple-50 text-purple-600'
+   611→                )}
+   612→              >
+   613→                {tag}
+   614→              </span>
+   615→            ))}
+   616→            {memory.tags.length > 3 && (
+   617→              <span className={cn(
+   618→                'inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mr-1.5 mt-1 uppercase tracking-wider',
+   619→                isDark ? 'bg-white/[0.04] text-white/20' : 'bg-gray-100 text-gray-400'
+   620→              )}>
+   621→                +{memory.tags.length - 3}
+   622→              </span>
+   623→            )}
+   624→          </div>
+   625→        )}
+   626→        <span className={cn(
+   627→          'text-[11px] mt-2 block relative z-0',
+   628→          isDark ? 'text-white/20' : 'text-gray-400'
+   629→        )}>
+   630→          {relativeTime}
+   631→        </span>
+   632→      </div>
+   633→    </motion.div>
+   634→  )
+   635→}
+   636→
+   637→// ─── Memory Detail Modal ────────────────────────────────────────────
+   638→function MemoryDetailModal({
+   639→  memory,
+   640→  isDark,
+   641→  onClose,
+   642→  onDelete,
+   643→  isDeleting,
+   644→}: {
+   645→  memory: Memory
+   646→  isDark: boolean
+   647→  onClose: () => void
+   648→  onDelete: () => void
+   649→  isDeleting: boolean
+   650→}) {
+   651→  return (
+   652→    <motion.div
+   653→      initial={{ opacity: 0 }}
+   654→      animate={{ opacity: 1 }}
+   655→      exit={{ opacity: 0 }}
+   656→      transition={{ duration: 0.2 }}
+   657→      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+   658→      onClick={onClose}
+   659→    >
+   660→      <motion.div
+   661→        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+   662→        animate={{ opacity: 1, scale: 1, y: 0 }}
+   663→        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+   664→        transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+   665→        onClick={(e) => e.stopPropagation()}
+   666→        className={cn(
+   667→          'rounded-2xl p-8 max-w-lg w-full shadow-2xl',
+   668→          isDark
+   669→            ? 'bg-[#0e0e14] border border-white/[0.08] shadow-purple-500/10'
+   670→            : 'bg-white border border-gray-200 shadow-purple-500/5'
+   671→        )}
+   672→      >
+   673→        {/* Close button */}
+   674→        <div className="flex justify-end mb-4">
+   675→          <button
+   676→            onClick={onClose}
+   677→            className={cn(
+   678→              'size-8 rounded-lg flex items-center justify-center transition-colors',
+   679→              isDark
+   680→                ? 'text-white/40 hover:text-white/70 hover:bg-white/[0.05]'
+   681→                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+   682→            )}
+   683→          >
+   684→            <X className="size-5" />
+   685→          </button>
+   686→        </div>
+   687→
+   688→        {/* AI Summary Section */}
+   689→        <div className={cn(
+   690→          'rounded-xl p-4 mb-6',
+   691→          isDark
+   692→            ? 'bg-purple-500/5 border border-purple-500/10'
+   693→            : 'bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-100/60'
+   694→        )}>
+   695→          <p className={cn(
+   696→            'text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-2',
+   697→            isDark ? 'text-purple-400' : 'text-purple-600'
+   698→          )}>
+   699→            <Sparkles className="w-3.5 h-3.5" />
+   700→            AI Summary
+   701→          </p>
+   702→          {memory.tags.length > 0 ? (
+   703→            <div className="flex flex-wrap gap-2">
+   704→              {memory.tags.map((tag) => (
+   705→                <span
+   706→                  key={tag}
+   707→                  className={cn(
+   708→                    'text-xs px-2.5 py-0.5 rounded-md font-medium',
+   709→                    isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-700'
+   710→                  )}
+   711→                >
+   712→                  {tag}
+   713→                </span>
+   714→              ))}
+   715→            </div>
+   716→          ) : (
+   717→            <p className={cn('text-sm', isDark ? 'text-white/30' : 'text-gray-400')}>
+   718→              No AI analysis yet.
+   719→            </p>
+   720→          )}
+   721→        </div>
+   722→
+   723→        {/* Original Thought */}
+   724→        <div className="mb-8">
+   725→          <p className={cn(
+   726→            'text-xs font-semibold uppercase tracking-widest mb-3',
+   727→            isDark ? 'text-white/40' : 'text-gray-500'
+   728→          )}>
+   729→            Original
+   730→          </p>
+   731→          <p className={cn(
+   732→            'text-sm leading-relaxed whitespace-pre-wrap',
+   733→            isDark ? 'text-white/70' : 'text-gray-800'
+   734→          )}>
+   735→            {memory.content}
+   736→          </p>
+   737→        </div>
+   738→
+   739→        {/* Delete Button */}
+   740→        <button
+   741→          onClick={onDelete}
+   742→          disabled={isDeleting}
+   743→          className={cn(
+   744→            'text-sm font-medium px-4 py-2 rounded-lg transition-colors',
+   745→            isDark
+   746→              ? 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
+   747→              : 'text-red-500 hover:text-red-600 hover:bg-red-50',
+   748→            isDeleting && 'opacity-50 cursor-not-allowed'
+   749→          )}
+   750→        >
+   751→          <span className="flex items-center justify-center gap-2">
+   752→            <Trash2 className="size-4" />
+   753→            {isDeleting ? 'Deleting...' : 'Delete'}
+   754→          </span>
+   755→        </button>
+   756→      </motion.div>
+   757→    </motion.div>
+   758→  )
+   759→}
+   760→

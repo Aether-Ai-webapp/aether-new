@@ -1,0 +1,660 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React, { useState, useEffect, useMemo } from 'react'
+     4→     4→import { motion } from 'framer-motion'
+     5→     5→import {
+     6→     6→  User,
+     7→     7→  Moon,
+     8→     8→  Sun,
+     9→     9→  Crown,
+    10→    10→  Download,
+    11→    11→  Trash2,
+    12→    12→  HardDrive,
+    13→    13→  Info,
+    14→    14→  Pencil,
+    15→    15→  Check,
+    16→    16→  X,
+    17→    17→  Sparkles,
+    18→    18→  Brain,
+    19→    19→  LogOut,
+    20→    20→  LogIn,
+    21→    21→  Cloud,
+    22→    22→  CloudOff,
+    23→    23→  Copy,
+    24→    24→  CheckCircle2,
+    25→    25→  AlertCircle,
+    26→    26→  ExternalLink,
+    27→    27→} from 'lucide-react'
+    28→    28→import { useAetherStore } from '@/lib/aether-store'
+    29→    29→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    30→    30→import { Switch } from '@/components/ui/switch'
+    31→    31→import { Button } from '@/components/ui/button'
+    32→    32→import { Separator } from '@/components/ui/separator'
+    33→    33→import {
+    34→    34→  Dialog,
+    35→    35→  DialogContent,
+    36→    36→  DialogHeader,
+    37→    37→  DialogTitle,
+    38→    38→  DialogTrigger,
+    39→    39→  DialogFooter,
+    40→    40→  DialogClose,
+    41→    41→} from '@/components/ui/dialog'
+    42→    42→import {
+    43→    43→  AlertDialog,
+    44→    44→  AlertDialogAction,
+    45→    45→  AlertDialogCancel,
+    46→    46→  AlertDialogContent,
+    47→    47→  AlertDialogDescription,
+    48→    48→  AlertDialogFooter,
+    49→    49→  AlertDialogHeader,
+    50→    50→  AlertDialogTitle,
+    51→    51→  AlertDialogTrigger,
+    52→    52→} from '@/components/ui/alert-dialog'
+    53→    53→import { Input } from '@/components/ui/input'
+    54→    54→import { Badge } from '@/components/ui/badge'
+    55→    55→import { Progress } from '@/components/ui/progress'
+    56→    56→import { toast } from 'sonner'
+    57→    57→import { cn } from '@/lib/utils'
+    58→    58→
+    59→    59→// ─── Animation variants ────────────────────────────────────────────
+    60→    60→const containerVariants = {
+    61→    61→  hidden: { opacity: 0 },
+    62→    62→  visible: {
+    63→    63→    opacity: 1,
+    64→    64→    transition: { staggerChildren: 0.08 },
+    65→    65→  },
+    66→    66→}
+    67→    67→
+    68→    68→const itemVariants = {
+    69→    69→  hidden: { opacity: 0, y: 16 },
+    70→    70→  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+    71→    71→}
+    72→    72→
+    73→    73→// ─── Profile defaults ───────────────────────────────────────────────
+    74→    74→const defaultProfile = {
+    75→    75→  name: 'Aether User',
+    76→    76→  email: 'hello@aether.app',
+    77→    77→}
+    78→    78→
+    79→    79→// ─── Feature list for plan comparison ───────────────────────────────
+    80→    80→const planFeatures = [
+    81→    81→  { label: 'Memories', free: 'Up to 100', pro: 'Unlimited' },
+    82→    82→  { label: 'Collections', free: 'Up to 5', pro: 'Unlimited' },
+    83→    83→  { label: 'AI Chat', free: '10 / day', pro: 'Unlimited' },
+    84→    84→  { label: 'File uploads', free: '5 MB', pro: '100 MB' },
+    85→    85→  { label: 'Export data', free: true, pro: true },
+    86→    86→  { label: 'Priority support', free: false, pro: true },
+    87→    87→]
+    88→    88→
+    89→    89→// ─── Component ──────────────────────────────────────────────────────
+    90→    90→export function Settings() {
+    91→    91→  const { darkMode, toggleDarkMode, memories, collections, user, logout, isAuthenticated, setShowAuthModal, supabaseReady } = useAetherStore()
+    92→    92→  const [profile, setProfile] = useState({ name: user?.name || 'Aether User', email: user?.email || 'hello@aether.app' })
+    93→    93→  const [editName, setEditName] = useState(profile.name)
+    94→    94→  const [editEmail, setEditEmail] = useState(profile.email)
+    95→    95→  const [editDialogOpen, setEditDialogOpen] = useState(false)
+    96→    96→
+    97→    97→  // ── Supabase setup state ────────────────────────────────────────
+    98→    98→  const [checkingSetup, setCheckingSetup] = useState(false)
+    99→    99→  const [sqlCopied, setSqlCopied] = useState(false)
+   100→   100→
+   101→   101→  // Derive setup status from store state
+   102→   102→  const effectiveSetupStatus = useMemo(() => {
+   103→   103→    if (!isAuthenticated) return 'idle' as const
+   104→   104→    if (supabaseReady) return 'ready' as const
+   105→   105→    if (checkingSetup) return 'checking' as const
+   106→   106→    return 'not-setup' as const
+   107→   107→  }, [isAuthenticated, supabaseReady, checkingSetup])
+   108→   108→
+   109→   109→  const checkSetup = async () => {
+   110→   110→    setCheckingSetup(true)
+   111→   111→    try {
+   112→   112→      const res = await fetch('/api/setup/supabase')
+   113→   113→      const data = await res.json()
+   114→   114→      if (data.tablesExist) {
+   115→   115→        // Update store - the store already tracks supabaseReady
+   116→   116→        useAetherStore.setState({ supabaseReady: true })
+   117→   117→      }
+   118→   118→    } catch {
+   119→   119→      // Error case - already reflected in effectiveSetupStatus
+   120→   120→    }
+   121→   121→    setCheckingSetup(false)
+   122→   122→  }
+   123→   123→
+   124→   124→  const copySqlToClipboard = async () => {
+   125→   125→    try {
+   126→   126→      const res = await fetch('/api/setup/sql')
+   127→   127→      if (res.ok) {
+   128→   128→        const { sql } = await res.json()
+   129→   129→        await navigator.clipboard.writeText(sql)
+   130→   130→        setSqlCopied(true)
+   131→   131→        toast.success('SQL copied to clipboard!')
+   132→   132→        setTimeout(() => setSqlCopied(false), 2000)
+   133→   133→      }
+   134→   134→    } catch {
+   135→   135→      toast.error('Failed to copy SQL')
+   136→   136→    }
+   137→   137→  }
+   138→   138→
+   139→   139→  // Sync dark mode class on <html>
+   140→   140→  useEffect(() => {
+   141→   141→    if (darkMode) {
+   142→   142→      document.documentElement.classList.add('dark')
+   143→   143→    } else {
+   144→   144→      document.documentElement.classList.remove('dark')
+   145→   145→    }
+   146→   146→  }, [darkMode])
+   147→   147→
+   148→   148→  // Storage usage (simulated: ~2 KB per memory + ~0.5 KB per collection)
+   149→   149→  const usedKB = memories.length * 2 + collections.length * 0.5
+   150→   150→  const maxKB = 500 // Free plan: 500 KB
+   151→   151→  const usagePercent = Math.min((usedKB / maxKB) * 100, 100)
+   152→   152→
+   153→   153→  const handleEditProfile = () => {
+   154→   154→    setEditName(profile.name)
+   155→   155→    setEditEmail(profile.email)
+   156→   156→    setEditDialogOpen(true)
+   157→   157→  }
+   158→   158→
+   159→   159→  const handleSaveProfile = () => {
+   160→   160→    setProfile({ name: editName.trim() || defaultProfile.name, email: editEmail.trim() || defaultProfile.email })
+   161→   161→    setEditDialogOpen(false)
+   162→   162→    toast.success('Profile updated')
+   163→   163→  }
+   164→   164→
+   165→   165→  const handleDarkModeToggle = () => {
+   166→   166→    toggleDarkMode()
+   167→   167→    toast.success(darkMode ? 'Light mode enabled' : 'Dark mode enabled')
+   168→   168→  }
+   169→   169→
+   170→   170→  const handleExportData = () => {
+   171→   171→    toast('Coming soon', { description: 'Data export will be available in a future update.' })
+   172→   172→  }
+   173→   173→
+   174→   174→  const handleClearAllData = () => {
+   175→   175→    toast('All data cleared', { description: 'This is a demo — no data was actually deleted.' })
+   176→   176→  }
+   177→   177→
+   178→   178→  const handleUpgrade = () => {
+   179→   179→    toast('Coming soon', { description: 'Pro plan will be available soon!' })
+   180→   180→  }
+   181→   181→
+   182→   182→  const userInitial = profile.name.charAt(0).toUpperCase()
+   183→   183→
+   184→   184→  return (
+   185→   185→    <motion.div
+   186→   186→      variants={containerVariants}
+   187→   187→      initial="hidden"
+   188→   188→      animate="visible"
+   189→   189→      className="space-y-6 max-w-2xl mx-auto pb-24 md:pb-8"
+   190→   190→    >
+   191→   191→      {/* ── Page Title ─────────────────────────────────────────────── */}
+   192→   192→      <motion.div variants={itemVariants}>
+   193→   193→        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+   194→   194→          <SettingsIcon className="size-7 text-primary" />
+   195→   195→          Settings
+   196→   196→        </h1>
+   197→   197→        <p className="text-sm text-muted-foreground mt-1">
+   198→   198→          Manage your account, appearance, and data.
+   199→   199→        </p>
+   200→   200→      </motion.div>
+   201→   201→
+   202→   202→      {/* ── 1. Profile Section ─────────────────────────────────────── */}
+   203→   203→      <motion.div variants={itemVariants}>
+   204→   204→        <Card className="border-0 shadow-sm bg-card">
+   205→   205→          <CardHeader className="pb-3">
+   206→   206→            <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   207→   207→              <User className="size-4 text-[#6D597A]" />
+   208→   208→              Profile
+   209→   209→            </CardTitle>
+   210→   210→          </CardHeader>
+   211→   211→          <CardContent className="pt-0">
+   212→   212→            <div className="flex items-center gap-4">
+   213→   213→              {/* Avatar */}
+   214→   214→              <div className="flex items-center justify-center size-14 rounded-full bg-gradient-to-br from-primary to-[#8B6F9A] text-primary-foreground font-bold text-xl shrink-0 shadow-md">
+   215→   215→                {userInitial}
+   216→   216→              </div>
+   217→   217→
+   218→   218→              {/* Info */}
+   219→   219→              <div className="flex-1 min-w-0">
+   220→   220→                <p className="text-base font-semibold text-foreground truncate">
+   221→   221→                  {profile.name}
+   222→   222→                </p>
+   223→   223→                <p className="text-sm text-muted-foreground truncate">
+   224→   224→                  {profile.email}
+   225→   225→                </p>
+   226→   226→              </div>
+   227→   227→
+   228→   228→              {/* Edit Button */}
+   229→   229→              <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+   230→   230→                <DialogTrigger asChild>
+   231→   231→                  <Button
+   232→   232→                    variant="outline"
+   233→   233→                    size="sm"
+   234→   234→                    className="gap-1.5 shrink-0"
+   235→   235→                    onClick={handleEditProfile}
+   236→   236→                  >
+   237→   237→                    <Pencil className="size-3.5" />
+   238→   238→                    <span className="hidden sm:inline">Edit Profile</span>
+   239→   239→                    <span className="sm:hidden">Edit</span>
+   240→   240→                  </Button>
+   241→   241→                </DialogTrigger>
+   242→   242→                <DialogContent className="sm:max-w-md">
+   243→   243→                  <DialogHeader>
+   244→   244→                    <DialogTitle>Edit Profile</DialogTitle>
+   245→   245→                  </DialogHeader>
+   246→   246→                  <div className="space-y-4 py-2">
+   247→   247→                    <div className="space-y-2">
+   248→   248→                      <label htmlFor="edit-name" className="text-sm font-medium text-foreground">
+   249→   249→                        Name
+   250→   250→                      </label>
+   251→   251→                      <Input
+   252→   252→                        id="edit-name"
+   253→   253→                        value={editName}
+   254→   254→                        onChange={(e) => setEditName(e.target.value)}
+   255→   255→                        placeholder="Your name"
+   256→   256→                      />
+   257→   257→                    </div>
+   258→   258→                    <div className="space-y-2">
+   259→   259→                      <label htmlFor="edit-email" className="text-sm font-medium text-foreground">
+   260→   260→                        Email
+   261→   261→                      </label>
+   262→   262→                      <Input
+   263→   263→                        id="edit-email"
+   264→   264→                        type="email"
+   265→   265→                        value={editEmail}
+   266→   266→                        onChange={(e) => setEditEmail(e.target.value)}
+   267→   267→                        placeholder="your@email.com"
+   268→   268→                      />
+   269→   269→                    </div>
+   270→   270→                  </div>
+   271→   271→                  <DialogFooter className="gap-2 sm:gap-0">
+   272→   272→                    <DialogClose asChild>
+   273→   273→                      <Button variant="outline">Cancel</Button>
+   274→   274→                    </DialogClose>
+   275→   275→                    <Button onClick={handleSaveProfile} className="gap-1.5">
+   276→   276→                      <Check className="size-3.5" />
+   277→   277→                      Save
+   278→   278→                    </Button>
+   279→   279→                  </DialogFooter>
+   280→   280→                </DialogContent>
+   281→   281→              </Dialog>
+   282→   282→
+   283→   283→              {/* Auth Button */}
+   284→   284→              {isAuthenticated ? (
+   285→   285→                <Button
+   286→   286→                  variant="ghost"
+   287→   287→                  size="sm"
+   288→   288→                  className="gap-1.5 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+   289→   289→                  onClick={() => { logout(); toast.success('Signed out'); }}
+   290→   290→                >
+   291→   291→                  <LogOut className="size-3.5" />
+   292→   292→                  <span className="hidden sm:inline">Sign Out</span>
+   293→   293→                </Button>
+   294→   294→              ) : (
+   295→   295→                <Button
+   296→   296→                  variant="outline"
+   297→   297→                  size="sm"
+   298→   298→                  className="gap-1.5 shrink-0"
+   299→   299→                  onClick={() => setShowAuthModal(true)}
+   300→   300→                >
+   301→   301→                  <LogIn className="size-3.5" />
+   302→   302→                  <span className="hidden sm:inline">Sign In</span>
+   303→   303→                </Button>
+   304→   304→              )}
+   305→   305→            </div>
+   306→   306→          </CardContent>
+   307→   307→        </Card>
+   308→   308→      </motion.div>
+   309→   309→
+   310→   310→      {/* ── 2. Cloud Sync (Supabase) Section ────────────────────────── */}
+   311→   311→      {isAuthenticated && (
+   312→   312→        <motion.div variants={itemVariants}>
+   313→   313→          <Card className="border-0 shadow-sm bg-card">
+   314→   314→            <CardHeader className="pb-3">
+   315→   315→              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   316→   316→                {effectiveSetupStatus === 'ready' ? (
+   317→   317→                  <Cloud className="size-4 text-[#81B29A]" />
+   318→   318→                ) : (
+   319→   319→                  <CloudOff className="size-4 text-[#E07A5F]" />
+   320→   320→                )}
+   321→   321→                Cloud Sync
+   322→   322→              </CardTitle>
+   323→   323→            </CardHeader>
+   324→   324→            <CardContent className="pt-0 space-y-4">
+   325→   325→              {effectiveSetupStatus === 'ready' ? (
+   326→   326→                <div className="flex items-center gap-3 p-3 rounded-xl bg-[#81B29A]/10">
+   327→   327→                  <CheckCircle2 className="size-5 text-[#81B29A] shrink-0" />
+   328→   328→                  <div>
+   329→   329→                    <p className="text-sm font-medium text-foreground">Connected to Supabase</p>
+   330→   330→                    <p className="text-xs text-muted-foreground">Your memories sync across devices.</p>
+   331→   331→                  </div>
+   332→   332→                </div>
+   333→   333→              ) : effectiveSetupStatus === 'not-setup' || effectiveSetupStatus === 'error' ? (
+   334→   334→                <div className="space-y-3">
+   335→   335→                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#E07A5F]/10">
+   336→   336→                    <AlertCircle className="size-5 text-[#E07A5F] shrink-0" />
+   337→   337→                    <div>
+   338→   338→                      <p className="text-sm font-medium text-foreground">Database tables not found</p>
+   339→   339→                      <p className="text-xs text-muted-foreground">Run the setup SQL in your Supabase dashboard to enable cloud sync.</p>
+   340→   340→                    </div>
+   341→   341→                  </div>
+   342→   342→                  <div className="flex flex-col sm:flex-row gap-2">
+   343→   343→                    <Button
+   344→   344→                      variant="outline"
+   345→   345→                      size="sm"
+   346→   346→                      className="gap-1.5"
+   347→   347→                      onClick={copySqlToClipboard}
+   348→   348→                    >
+   349→   349→                      {sqlCopied ? (
+   350→   350→                        <CheckCircle2 className="size-3.5 text-[#81B29A]" />
+   351→   351→                      ) : (
+   352→   352→                        <Copy className="size-3.5" />
+   353→   353→                      )}
+   354→   354→                      {sqlCopied ? 'Copied!' : 'Copy Setup SQL'}
+   355→   355→                    </Button>
+   356→   356→                    <Button
+   357→   357→                      variant="outline"
+   358→   358→                      size="sm"
+   359→   359→                      className="gap-1.5"
+   360→   360→                      onClick={() => window.open('https://supabase.com/dashboard/project/kzjntvjzjhbodehuqxbf/sql', '_blank')}
+   361→   361→                    >
+   362→   362→                      <ExternalLink className="size-3.5" />
+   363→   363→                      Open SQL Editor
+   364→   364→                    </Button>
+   365→   365→                    <Button
+   366→   366→                      variant="outline"
+   367→   367→                      size="sm"
+   368→   368→                      className="gap-1.5"
+   369→   369→                      onClick={checkSetup}
+   370→   370→                    >
+   371→   371→                      <Check className="size-3.5" />
+   372→   372→                      Re-check
+   373→   373→                    </Button>
+   374→   374→                  </div>
+   375→   375→                </div>
+   376→   376→              ) : effectiveSetupStatus === 'checking' ? (
+   377→   377→                <div className="flex items-center gap-3 p-3 rounded-xl bg-muted">
+   378→   378→                  <Cloud className="size-5 text-muted-foreground shrink-0 animate-pulse" />
+   379→   379→                  <p className="text-sm text-muted-foreground">Checking database connection...</p>
+   380→   380→                </div>
+   381→   381→              ) : null}
+   382→   382→            </CardContent>
+   383→   383→          </Card>
+   384→   384→        </motion.div>
+   385→   385→      )}
+   386→   386→
+   387→   387→      {/* ── 3. Appearance Section ──────────────────────────────────── */}
+   388→   388→      <motion.div variants={itemVariants}>
+   389→   389→        <Card className="border-0 shadow-sm bg-card">
+   390→   390→          <CardHeader className="pb-3">
+   391→   391→            <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   392→   392→              {darkMode ? (
+   393→   393→                <Moon className="size-4 text-[#B8A9C9]" />
+   394→   394→              ) : (
+   395→   395→                <Sun className="size-4 text-[#F2CC8F]" />
+   396→   396→              )}
+   397→   397→              Appearance
+   398→   398→            </CardTitle>
+   399→   399→          </CardHeader>
+   400→   400→          <CardContent className="pt-0">
+   401→   401→            <div className="flex items-center justify-between gap-4">
+   402→   402→              <div className="flex items-center gap-3">
+   403→   403→                <div className={cn(
+   404→   404→                  'flex items-center justify-center size-9 rounded-lg shrink-0',
+   405→   405→                  darkMode ? 'bg-[#2d2d4a]' : 'bg-[#F2CC8F]/30'
+   406→   406→                )}>
+   407→   407→                  {darkMode ? (
+   408→   408→                    <Moon className="size-4 text-[#B8A9C9]" />
+   409→   409→                  ) : (
+   410→   410→                    <Sun className="size-4 text-[#F2CC8F]" />
+   411→   411→                  )}
+   412→   412→                </div>
+   413→   413→                <div>
+   414→   414→                  <p className="text-sm font-medium text-foreground">Dark Mode</p>
+   415→   415→                  <p className="text-xs text-muted-foreground">
+   416→   416→                    {darkMode ? 'On — easy on the eyes' : 'Off — bright and warm'}
+   417→   417→                  </p>
+   418→   418→                </div>
+   419→   419→              </div>
+   420→   420→              <Switch
+   421→   421→                checked={darkMode}
+   422→   422→                onCheckedChange={handleDarkModeToggle}
+   423→   423→                aria-label="Toggle dark mode"
+   424→   424→              />
+   425→   425→            </div>
+   426→   426→          </CardContent>
+   427→   427→        </Card>
+   428→   428→      </motion.div>
+   429→   429→
+   430→   430→      {/* ── 4. Plan Section ────────────────────────────────────────── */}
+   431→   431→      <motion.div variants={itemVariants}>
+   432→   432→        <Card className="border-0 shadow-sm bg-card">
+   433→   433→          <CardHeader className="pb-3">
+   434→   434→            <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   435→   435→              <Crown className="size-4 text-[#F2CC8F]" />
+   436→   436→              Plan
+   437→   437→            </CardTitle>
+   438→   438→          </CardHeader>
+   439→   439→          <CardContent className="pt-0 space-y-4">
+   440→   440→            {/* Current Plan Card */}
+   441→   441→            <div className="flex items-center gap-4 p-4 rounded-xl bg-[#F5EDE6] dark:bg-[#252540] transition-colors">
+   442→   442→              <div className="flex items-center justify-center size-10 rounded-full bg-[#F2CC8F]/30 dark:bg-[#F2CC8F]/20 shrink-0">
+   443→   443→                <Crown className="size-5 text-[#F2CC8F]" />
+   444→   444→              </div>
+   445→   445→              <div className="flex-1 min-w-0">
+   446→   446→                <div className="flex items-center gap-2">
+   447→   447→                  <p className="text-sm font-semibold text-foreground">Free Plan</p>
+   448→   448→                  <Badge className="bg-[#6D597A]/10 text-[#6D597A] dark:bg-[#B8A9C9]/20 dark:text-[#B8A9C9] border-0 text-[10px] px-1.5 py-0 h-5">
+   449→   449→                    Current
+   450→   450→                  </Badge>
+   451→   451→                </div>
+   452→   452→                <p className="text-xs text-muted-foreground mt-0.5">
+   453→   453→                  Basic features for personal use
+   454→   454→                </p>
+   455→   455→              </div>
+   456→   456→              <Button
+   457→   457→                size="sm"
+   458→   458→                className="gap-1.5 bg-gradient-to-r from-[#6D597A] to-[#8B6F9A] text-white hover:opacity-90 shadow-sm shrink-0"
+   459→   459→                onClick={handleUpgrade}
+   460→   460→              >
+   461→   461→                <Sparkles className="size-3.5" />
+   462→   462→                <span className="hidden sm:inline">Upgrade to Pro</span>
+   463→   463→                <span className="sm:hidden">Pro</span>
+   464→   464→              </Button>
+   465→   465→            </div>
+   466→   466→
+   467→   467→            {/* Feature Comparison */}
+   468→   468→            <div className="space-y-2">
+   469→   469→              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+   470→   470→                Feature Comparison
+   471→   471→              </p>
+   472→   472→              <div className="rounded-lg border border-border overflow-hidden">
+   473→   473→                <table className="w-full text-sm">
+   474→   474→                  <thead>
+   475→   475→                    <tr className="bg-muted/50">
+   476→   476→                      <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Feature</th>
+   477→   477→                      <th className="text-center py-2 px-3 text-xs font-medium text-muted-foreground">Free</th>
+   478→   478→                      <th className="text-center py-2 px-3 text-xs font-medium text-[#6D597A] dark:text-[#B8A9C9]">Pro</th>
+   479→   479→                    </tr>
+   480→   480→                  </thead>
+   481→   481→                  <tbody>
+   482→   482→                    {planFeatures.map((feature, i) => (
+   483→   483→                      <tr key={feature.label} className={cn(i < planFeatures.length - 1 && 'border-b border-border')}>
+   484→   484→                        <td className="py-2 px-3 text-xs text-foreground">{feature.label}</td>
+   485→   485→                        <td className="py-2 px-3 text-center text-xs text-muted-foreground">
+   486→   486→                          {typeof feature.free === 'boolean' ? (
+   487→   487→                            feature.free ? (
+   488→   488→                              <Check className="size-3.5 mx-auto text-[#81B29A]" />
+   489→   489→                            ) : (
+   490→   490→                              <X className="size-3.5 mx-auto text-muted-foreground/40" />
+   491→   491→                            )
+   492→   492→                          ) : (
+   493→   493→                            feature.free
+   494→   494→                          )}
+   495→   495→                        </td>
+   496→   496→                        <td className="py-2 px-3 text-center text-xs text-foreground">
+   497→   497→                          {typeof feature.pro === 'boolean' ? (
+   498→   498→                            feature.pro ? (
+   499→   499→                              <Check className="size-3.5 mx-auto text-[#81B29A]" />
+   500→   500→                            ) : (
+   501→   501→                              <X className="size-3.5 mx-auto text-muted-foreground/40" />
+   502→   502→                            )
+   503→   503→                          ) : (
+   504→   504→                            feature.pro
+   505→   505→                          )}
+   506→   506→                        </td>
+   507→   507→                      </tr>
+   508→   508→                    ))}
+   509→   509→                  </tbody>
+   510→   510→                </table>
+   511→   511→              </div>
+   512→   512→            </div>
+   513→   513→          </CardContent>
+   514→   514→        </Card>
+   515→   515→      </motion.div>
+   516→   516→
+   517→   517→      {/* ── 5. Data Section ────────────────────────────────────────── */}
+   518→   518→      <motion.div variants={itemVariants}>
+   519→   519→        <Card className="border-0 shadow-sm bg-card">
+   520→   520→          <CardHeader className="pb-3">
+   521→   521→            <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   522→   522→              <HardDrive className="size-4 text-[#81B29A]" />
+   523→   523→              Data
+   524→   524→            </CardTitle>
+   525→   525→          </CardHeader>
+   526→   526→          <CardContent className="pt-0 space-y-5">
+   527→   527→            {/* Storage Usage */}
+   528→   528→            <div className="space-y-2">
+   529→   529→              <div className="flex items-center justify-between">
+   530→   530→                <p className="text-sm font-medium text-foreground">Storage Usage</p>
+   531→   531→                <p className="text-xs text-muted-foreground">
+   532→   532→                  {usedKB.toFixed(1)} KB / {maxKB} KB
+   533→   533→                </p>
+   534→   534→              </div>
+   535→   535→              <Progress value={usagePercent} className="h-2" />
+   536→   536→              <p className="text-xs text-muted-foreground">
+   537→   537→                {memories.length} memories · {collections.length} collections
+   538→   538→              </p>
+   539→   539→            </div>
+   540→   540→
+   541→   541→            <Separator />
+   542→   542→
+   543→   543→            {/* Action Buttons */}
+   544→   544→            <div className="flex flex-col sm:flex-row gap-3">
+   545→   545→              <Button
+   546→   546→                variant="outline"
+   547→   547→                className="gap-2 flex-1"
+   548→   548→                onClick={handleExportData}
+   549→   549→              >
+   550→   550→                <Download className="size-4" />
+   551→   551→                Export Data
+   552→   552→              </Button>
+   553→   553→
+   554→   554→              <AlertDialog>
+   555→   555→                <AlertDialogTrigger asChild>
+   556→   556→                  <Button
+   557→   557→                    variant="destructive"
+   558→   558→                    className="gap-2 flex-1"
+   559→   559→                  >
+   560→   560→                    <Trash2 className="size-4" />
+   561→   561→                    Clear All Data
+   562→   562→                  </Button>
+   563→   563→                </AlertDialogTrigger>
+   564→   564→                <AlertDialogContent>
+   565→   565→                  <AlertDialogHeader>
+   566→   566→                    <AlertDialogTitle className="flex items-center gap-2">
+   567→   567→                      <Trash2 className="size-5 text-destructive" />
+   568→   568→                      Clear All Data
+   569→   569→                    </AlertDialogTitle>
+   570→   570→                    <AlertDialogDescription>
+   571→   571→                      This will permanently delete all your memories, collections, and chat
+   572→   572→                      history. This action cannot be undone.
+   573→   573→                    </AlertDialogDescription>
+   574→   574→                  </AlertDialogHeader>
+   575→   575→                  <AlertDialogFooter>
+   576→   576→                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+   577→   577→                    <AlertDialogAction
+   578→   578→                      onClick={handleClearAllData}
+   579→   579→                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+   580→   580→                    >
+   581→   581→                      Yes, clear everything
+   582→   582→                    </AlertDialogAction>
+   583→   583→                  </AlertDialogFooter>
+   584→   584→                </AlertDialogContent>
+   585→   585→              </AlertDialog>
+   586→   586→            </div>
+   587→   587→          </CardContent>
+   588→   588→        </Card>
+   589→   589→      </motion.div>
+   590→   590→
+   591→   591→      {/* ── 6. About Section ───────────────────────────────────────── */}
+   592→   592→      <motion.div variants={itemVariants}>
+   593→   593→        <Card className="border-0 shadow-sm bg-card">
+   594→   594→          <CardHeader className="pb-3">
+   595→   595→            <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+   596→   596→              <Info className="size-4 text-[#6D597A] dark:text-[#B8A9C9]" />
+   597→   597→              About
+   598→   598→            </CardTitle>
+   599→   599→          </CardHeader>
+   600→   600→          <CardContent className="pt-0 space-y-4">
+   601→   601→            <div className="flex items-center gap-4">
+   602→   602→              <div className="flex items-center justify-center size-12 rounded-xl bg-gradient-to-br from-primary to-[#8B6F9A] text-primary-foreground shadow-md shrink-0">
+   603→   603→                <Brain className="size-6" />
+   604→   604→              </div>
+   605→   605→              <div>
+   606→   606→                <p className="text-sm font-semibold text-foreground">Aether v0.3.0</p>
+   607→   607→                <p className="text-xs text-muted-foreground">Your personal memory companion</p>
+   608→   608→              </div>
+   609→   609→            </div>
+   610→   610→
+   611→   611→            <Separator />
+   612→   612→
+   613→   613→            <div className="flex flex-col gap-2">
+   614→   614→              <div className="flex items-center justify-between">
+   615→   615→                <span className="text-xs text-muted-foreground">Version</span>
+   616→   616→                <span className="text-xs font-medium text-foreground">0.3.0</span>
+   617→   617→              </div>
+   618→   618→              <div className="flex items-center justify-between">
+   619→   619→                <span className="text-xs text-muted-foreground">Build</span>
+   620→   620→                <span className="text-xs font-medium text-foreground">2025.03</span>
+   621→   621→              </div>
+   622→   622→              <div className="flex items-center justify-between">
+   623→   623→                <span className="text-xs text-muted-foreground">Cloud Sync</span>
+   624→   624→                <span className="text-xs font-medium text-foreground">
+   625→   625→                  {supabaseReady ? 'Connected' : isAuthenticated ? 'Setup Required' : 'Not Available'}
+   626→   626→                </span>
+   627→   627→              </div>
+   628→   628→            </div>
+   629→   629→
+   630→   630→            <Separator />
+   631→   631→
+   632→   632→            <p className="text-xs text-center text-muted-foreground py-1">
+   633→   633→              Made with ❤️ by the Aether team
+   634→   634→            </p>
+   635→   635→          </CardContent>
+   636→   636→        </Card>
+   637→   637→      </motion.div>
+   638→   638→    </motion.div>
+   639→   639→  )
+   640→   640→}
+   641→   641→
+   642→   642→// ─── Small Settings icon (lucide-style inline) ──────────────────────
+   643→   643→function SettingsIcon({ className }: { className?: string }) {
+   644→   644→  return (
+   645→   645→    <svg
+   646→   646→      xmlns="http://www.w3.org/2000/svg"
+   647→   647→      viewBox="0 0 24 24"
+   648→   648→      fill="none"
+   649→   649→      stroke="currentColor"
+   650→   650→      strokeWidth="2"
+   651→   651→      strokeLinecap="round"
+   652→   652→      strokeLinejoin="round"
+   653→   653→      className={className}
+   654→   654→    >
+   655→   655→      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+   656→   656→      <circle cx="12" cy="12" r="3" />
+   657→   657→    </svg>
+   658→   658→  )
+   659→   659→}
+   660→   660→
