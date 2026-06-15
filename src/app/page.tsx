@@ -212,11 +212,7 @@ export default function AetherApp() {
     const text = captureText.trim()
     if (!text && !selectedImage && !isRecording) return
 
-    if (!store.isAuthenticated) {
-      store.setShowAuthModal(true)
-      store.requireAuth(() => handleCapture())
-      return
-    }
+    // Local users are now authenticated by default — no auth gate needed
 
     setIsCapturing(true)
 
@@ -276,11 +272,7 @@ export default function AetherApp() {
         const blob = new Blob(chunks, { type: 'audio/webm' })
         stream.getTracks().forEach(t => t.stop())
 
-        if (!store.isAuthenticated) {
-          store.setShowAuthModal(true)
-          toast.error('Please sign in to capture voice notes')
-          return
-        }
+        // Local users are now authenticated by default — no auth gate needed
 
         setIsCapturing(true)
         try {

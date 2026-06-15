@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── SUPABASE SERVER CLIENT ──────────────────────────────────────────
+// ─── SUPABASE AVAILABILITY CHECK ──────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
+
+function isSupabaseConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  return !!(url && key && url !== 'your_supabase_url_here' && key !== 'your_supabase_anon_key_here')
+}
 
 async function getSupabaseServer() {
   const { createClient } = await import('@/lib/supabase/server')
@@ -38,11 +45,11 @@ function autoGenerateTags(content: string, title: string): string[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── AUDIO TRANSCRIPTION (Groq Whisper or z-ai-web-dev-sdk) ──────────
+// ─── AUDIO TRANSCRIPTION (z-ai-web-dev-sdk or Groq Whisper) ──────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function transcribeAudio(audioFile: File): Promise<string> {
-  // Try z-ai-web-dev-sdk first (always available)
+  // Try z-ai-web-dev-sdk first (always available in this environment)
   try {
     const { createTranscription } = await import('@/lib/aether-asr')
     const transcript = await createTranscription(audioFile)
@@ -81,10 +88,12 @@ async function transcribeAudio(audioFile: File): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── IMAGE UPLOAD TO SUPABASE STORAGE ────────────────────────────────
+// ─── IMAGE UPLOAD TO SUPABASE STORAGE (optional) ─────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function uploadImageToStorage(imageFile: File, userId: string): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null
+
   try {
     const supabase = await getSupabaseServer()
 
@@ -118,7 +127,7 @@ async function uploadImageToStorage(imageFile: File, userId: string): Promise<st
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── GEMINI COGNITIVE SYNTHESIS ──────────────────────────────────────
+// ─── GEMINI COGNITIVE SYNTHESIS (optional) ───────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 interface GeminiSynthesis {
@@ -187,7 +196,7 @@ async function synthesizeWithGemini(rawContent: string): Promise<GeminiSynthesis
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── COLLECTION TAG MATCHING ─────────────────────────────────────────
+// ─── COLLECTION TAG MATCHING (Supabase only) ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function matchOrCreateCollections(
@@ -199,14 +208,12 @@ async function matchOrCreateCollections(
   if (tags.length === 0) return
 
   try {
-    // Fetch existing collections for this user
     const { data: existingCollections } = await supabase
       .from('collections')
       .select('id, name')
       .eq('user_id', userId)
 
     if (existingCollections && existingCollections.length > 0) {
-      // Try to match tags to existing collection names
       for (const tag of tags) {
         const tagLower = tag.toLowerCase()
         const matched = existingCollections.find((c: { id: string; name: string }) =>
@@ -214,14 +221,13 @@ async function matchOrCreateCollections(
         )
 
         if (matched) {
-          // Link memory to this collection
           await supabase
             .from('memory_collections')
             .insert({
               memory_id: memoryId,
               collection_id: matched.id,
             })
-          break // Only match to one collection per capture
+          break
         }
       }
     }
@@ -231,7 +237,7 @@ async function matchOrCreateCollections(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── 10-NOTE AUTO-SWEEP RULE ─────────────────────────────────────────
+// ─── 10-NOTE AUTO-SWEEP RULE (Supabase only) ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function autoSweepCollections(
@@ -239,7 +245,6 @@ async function autoSweepCollections(
   userId: string
 ): Promise<void> {
   try {
-    // Find memories without any collection that share matching tags
     const { data: uncollectedMemories } = await supabase
       .from('memories')
       .select('id, tags, type')
@@ -247,7 +252,6 @@ async function autoSweepCollections(
 
     if (!uncollectedMemories || uncollectedMemories.length < 10) return
 
-    // Group uncollected memories by tag
     const tagGroups: Record<string, string[]> = {}
     for (const mem of uncollectedMemories) {
       if (!mem.tags) continue
@@ -258,10 +262,8 @@ async function autoSweepCollections(
       }
     }
 
-    // Check for any tag group with 10+ memories
     for (const [tag, memoryIds] of Object.entries(tagGroups)) {
       if (memoryIds.length >= 10) {
-        // Check if a collection for this tag already exists
         const { data: existingCol } = await supabase
           .from('collections')
           .select('id')
@@ -271,7 +273,6 @@ async function autoSweepCollections(
 
         if (existingCol && existingCol.length > 0) continue
 
-        // Create a new collection
         const displayName = tag.charAt(0).toUpperCase() + tag.slice(1)
         const { data: newCol } = await supabase
           .from('collections')
@@ -285,7 +286,6 @@ async function autoSweepCollections(
           .single()
 
         if (newCol) {
-          // Batch link memories to this new collection
           const junctionRows = memoryIds.slice(0, 50).map(mid => ({
             memory_id: mid,
             collection_id: (newCol as { id: string }).id,
@@ -294,8 +294,6 @@ async function autoSweepCollections(
           await supabase
             .from('memory_collections')
             .insert(junctionRows)
-
-          console.log(`Auto-created collection "${displayName}" with ${memoryIds.length} memories`)
         }
       }
     }
@@ -305,20 +303,73 @@ async function autoSweepCollections(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// ─── SAVE TO PRISMA (Local Fallback) ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+
+async function saveToPrisma(data: {
+  type: string
+  title: string
+  content: string
+  summary: string | null
+  deepInsight: string | null
+  tags: string[]
+  sourceUrl: string | null
+  imageUrl: string | null
+}) {
+  const memory = await db.memory.create({
+    data: {
+      type: data.type || 'text',
+      title: data.title || '',
+      content: data.content || '',
+      summary: data.summary,
+      deepInsight: data.deepInsight,
+      tags: data.tags.join(','),
+      sourceUrl: data.sourceUrl,
+      imageUrl: data.imageUrl,
+    },
+    include: {
+      collections: {
+        include: {
+          collection: {
+            select: { id: true, name: true, color: true, icon: true },
+          },
+        },
+      },
+    },
+  })
+
+  return {
+    id: memory.id,
+    type: memory.type,
+    title: memory.title,
+    content: memory.content,
+    summary: memory.summary,
+    deepInsight: memory.deepInsight || null,
+    tags: memory.tags ? memory.tags.split(',').filter(Boolean) : [],
+    sourceUrl: memory.sourceUrl,
+    fileUrl: memory.fileUrl || null,
+    imagePreview: memory.imagePreview || null,
+    imageUrl: memory.imageUrl || null,
+    recap: memory.recap || null,
+    isFavorite: memory.isFavorite,
+    createdAt: memory.createdAt.toISOString(),
+    updatedAt: memory.updatedAt.toISOString(),
+    collections: memory.collections.map(mc => ({
+      id: mc.collection.id,
+      name: mc.collection.name,
+      color: mc.collection.color,
+      icon: mc.collection.icon,
+    })),
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // ─── MAIN POST HANDLER ──────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 export async function POST(req: NextRequest) {
   try {
-    // ── STEP 1: Authenticate ────────────────────────────────────────
-    const supabase = await getSupabaseServer()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    // ── STEP 2: Parse FormData ──────────────────────────────────────
+    // ── STEP 1: Parse FormData ──────────────────────────────────────
     const formData = await req.formData()
     const text = (formData.get('text') as string) || ''
     const url = (formData.get('url') as string) || ''
@@ -335,7 +386,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No content provided' }, { status: 400 })
     }
 
-    // ── STEP 3: Process Audio → Transcript ──────────────────────────
+    // ── STEP 2: Process Audio → Transcript ──────────────────────────
     let audioTranscript = ''
     let memoryType: string = 'text'
 
@@ -344,28 +395,32 @@ export async function POST(req: NextRequest) {
       audioTranscript = await transcribeAudio(audioFile)
     }
 
-    // ── STEP 4: Process Image → Upload to Storage ───────────────────
+    // ── STEP 3: Process Image → Upload to Storage (if Supabase available) ──
     let imageUrl: string | null = null
-    let imageDescription = ''
 
     if (hasImage) {
       memoryType = 'image'
-      imageUrl = await uploadImageToStorage(imageFile, user.id)
+      // Try uploading to Supabase Storage if configured
+      if (isSupabaseConfigured()) {
+        imageUrl = await uploadImageToStorage(imageFile, 'local')
+      }
+      // If no Supabase or upload failed, we still save the memory without image URL
+      // The frontend can display a placeholder
     }
 
-    // ── STEP 5: Assemble Raw Content ────────────────────────────────
+    // ── STEP 4: Assemble Raw Content ────────────────────────────────
     let rawContent = ''
     if (hasText) rawContent += text.trim()
     if (hasUrl) rawContent += (rawContent ? '\n\n' : '') + `URL: ${url.trim()}`
     if (audioTranscript) rawContent += (rawContent ? '\n\n' : '') + `Voice Transcript:\n${audioTranscript}`
-    if (imageDescription) rawContent += (rawContent ? '\n\n' : '') + `Image: ${imageDescription}`
     if (imageUrl && !rawContent) rawContent = 'Captured image'
+    if (hasImage && !rawContent) rawContent = 'Image capture'
 
     if (hasUrl) memoryType = 'link'
-    if (hasAudio && hasImage) memoryType = 'voice' // Voice takes priority
+    if (hasAudio && hasImage) memoryType = 'voice'
     if (!hasAudio && !hasImage && !hasUrl) memoryType = 'text'
 
-    // ── STEP 6: AI Cognitive Synthesis (Gemini Flash) ───────────────
+    // ── STEP 5: AI Cognitive Synthesis (Gemini Flash, optional) ─────
     let aiTitle = hasText ? text.slice(0, 80) : hasUrl ? 'Saved Link' : hasAudio ? 'Voice Note' : 'Image Capture'
     let aiSummary: string | null = null
     let aiDeepInsight: string | null = null
@@ -383,65 +438,89 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── STEP 7: Insert into Supabase ────────────────────────────────
-    const { data: memoryRow, error: insertError } = await supabase
-      .from('memories')
-      .insert({
-        user_id: user.id,
-        type: memoryType,
-        title: aiTitle,
-        content: rawContent,
-        summary: aiSummary,
-        deep_insight: aiDeepInsight,
-        tags: aiTags.join(','),
-        source_url: hasUrl ? url.trim() : null,
-        image_url: imageUrl,
-        is_favorite: false,
-      })
-      .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
-      .single()
+    // ── STEP 6: Try Supabase first, then fall back to Prisma ────────
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = await getSupabaseServer()
+        const { data: { user } } = await supabase.auth.getUser()
 
-    if (insertError) {
-      console.error('Supabase insert error:', insertError.message)
-      return NextResponse.json({ error: 'Failed to save memory' }, { status: 500 })
+        if (user) {
+          // Authenticated Supabase path
+          const { data: memoryRow, error: insertError } = await supabase
+            .from('memories')
+            .insert({
+              user_id: user.id,
+              type: memoryType,
+              title: aiTitle,
+              content: rawContent,
+              summary: aiSummary,
+              deep_insight: aiDeepInsight,
+              tags: aiTags.join(','),
+              source_url: hasUrl ? url.trim() : null,
+              image_url: imageUrl,
+              is_favorite: false,
+            })
+            .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+            .single()
+
+          if (!insertError && memoryRow) {
+            // Collection Tag Matching
+            await matchOrCreateCollections(supabase, user.id, (memoryRow as { id: string }).id, aiTags)
+
+            // 10-Note Auto-Sweep (non-blocking)
+            autoSweepCollections(supabase, user.id).catch(() => {})
+
+            // Return memory object in the format the frontend expects
+            const row = memoryRow as Record<string, unknown>
+            const memoryCollections = (row.memory_collections as Array<{ collection_id: string; collections: { id: string; name: string; color: string; icon: string } }>) || []
+
+            const memory = {
+              id: row.id as string,
+              type: (row.type as string) || 'text',
+              title: (row.title as string) || '',
+              content: (row.content as string) || '',
+              summary: (row.summary as string) || null,
+              deepInsight: (row.deep_insight as string) || null,
+              tags: row.tags ? (row.tags as string).split(',').filter(Boolean) : [],
+              sourceUrl: (row.source_url as string) || null,
+              fileUrl: (row.file_url as string) || null,
+              imagePreview: (row.image_preview as string) || null,
+              imageUrl: (row.image_url as string) || null,
+              recap: (row.recap as string) || null,
+              isFavorite: (row.is_favorite as boolean) || false,
+              createdAt: (row.created_at as string) || new Date().toISOString(),
+              updatedAt: (row.updated_at as string) || new Date().toISOString(),
+              collections: memoryCollections.map(mc => ({
+                id: mc.collections.id,
+                name: mc.collections.name,
+                color: mc.collections.color,
+                icon: mc.collections.icon,
+              })),
+            }
+
+            return NextResponse.json({ success: true, memory })
+          }
+
+          // If Supabase insert failed, fall through to Prisma
+          console.warn('Supabase insert failed, falling back to Prisma')
+        }
+      } catch (err) {
+        // Supabase not working, fall through to Prisma
+        console.warn('Supabase capture failed, falling back to Prisma:', err instanceof Error ? err.message : 'Unknown')
+      }
     }
 
-    // ── STEP 8: Collection Tag Matching ─────────────────────────────
-    await matchOrCreateCollections(supabase, user.id, (memoryRow as { id: string }).id, aiTags)
-
-    // ── STEP 9: 10-Note Auto-Sweep ──────────────────────────────────
-    // Run asynchronously — don't block the response
-    autoSweepCollections(supabase, user.id).catch(() => {
-      // Silent fail — non-blocking
+    // ── STEP 7: Prisma Fallback (always works) ─────────────────────
+    const memory = await saveToPrisma({
+      type: memoryType,
+      title: aiTitle,
+      content: rawContent,
+      summary: aiSummary,
+      deepInsight: aiDeepInsight,
+      tags: aiTags,
+      sourceUrl: hasUrl ? url.trim() : null,
+      imageUrl: imageUrl,
     })
-
-    // ── STEP 10: Return Memory Object ───────────────────────────────
-    const row = memoryRow as Record<string, unknown>
-    const memoryCollections = (row.memory_collections as Array<{ collection_id: string; collections: { id: string; name: string; color: string; icon: string } }>) || []
-
-    const memory = {
-      id: row.id as string,
-      type: (row.type as string) || 'text',
-      title: (row.title as string) || '',
-      content: (row.content as string) || '',
-      summary: (row.summary as string) || null,
-      deepInsight: (row.deep_insight as string) || null,
-      tags: row.tags ? (row.tags as string).split(',').filter(Boolean) : [],
-      sourceUrl: (row.source_url as string) || null,
-      fileUrl: (row.file_url as string) || null,
-      imagePreview: (row.image_preview as string) || null,
-      imageUrl: (row.image_url as string) || null,
-      recap: (row.recap as string) || null,
-      isFavorite: (row.is_favorite as boolean) || false,
-      createdAt: (row.created_at as string) || new Date().toISOString(),
-      updatedAt: (row.updated_at as string) || new Date().toISOString(),
-      collections: memoryCollections.map(mc => ({
-        id: mc.collections.id,
-        name: mc.collections.name,
-        color: mc.collections.color,
-        icon: mc.collections.icon,
-      })),
-    }
 
     return NextResponse.json({ success: true, memory })
   } catch (error) {

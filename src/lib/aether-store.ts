@@ -260,17 +260,17 @@ export const useAetherStore = create<AetherState>((set, get) => ({
 
   // Auth — start as "local" user, no auth gate
   user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
-  isAuthenticated: false,
+  isAuthenticated: true,
   showAuthModal: false,
   pendingAction: null,
   supabaseReady: false,
-  setUser: (user) => set({ user, isAuthenticated: !!user && user.id !== 'local' }),
+  setUser: (user) => set({ user, isAuthenticated: !!user }),
   setShowAuthModal: (showAuthModal) => set({ showAuthModal }),
 
-  // The gate: if user is signed in, run action immediately. Otherwise, queue it and show modal.
+  // The gate: if there's any user (including local), allow the action. Only show auth modal if NO user at all.
   requireAuth: (action) => {
     const state = get()
-    if (state.isAuthenticated && state.user && state.user.id !== 'local') {
+    if (state.user) {
       action()
     } else {
       set({ showAuthModal: true, pendingAction: action })
@@ -358,7 +358,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
     } catch { /* ignore */ }
     set({
       user: { id: 'local', email: '', name: 'Aether User', avatarUrl: null },
-      isAuthenticated: false,
+      isAuthenticated: true,
       supabaseReady: false,
       chatMessages: [],
     })
@@ -380,8 +380,8 @@ export const useAetherStore = create<AetherState>((set, get) => ({
         }
       }
     } catch { /* ignore */ }
-    // No Supabase session — stay as local user (not gated)
-    set({ isAuthenticated: false })
+    // No Supabase session — stay as local user (still "authenticated" for local mode)
+    set({ isAuthenticated: true })
   },
 
   // Check if Supabase tables exist for the current user

@@ -133,3 +133,25 @@ Stage Summary:
 - No compilation errors, no runtime errors
 - All UI features verified via browser testing
 - Supabase env vars not configured, so auth operations show expected error messages
+
+---
+Task ID: 1
+Agent: full-stack-developer
+Task: Fix Zustand store for local auth
+
+Work Log:
+- Changed `isAuthenticated` initial state from `false` to `true` so local user is treated as authenticated for local-only mode
+- Fixed `setUser` to remove `user.id !== 'local'` gate — now any user object (including local) means authenticated
+- Fixed `requireAuth` to allow any user (including local) to proceed; only shows auth modal if `user` is null
+- Fixed `logout` to set `isAuthenticated: true` (not `false`) after resetting to local user
+- Fixed `checkSession` to set `isAuthenticated: true` (not `false`) when no Supabase session exists, keeping local user operational
+- Verified `login` and `signup` already handle failure gracefully (return false without changing auth state)
+- Verified `checkSupabaseTables` already gracefully sets `supabaseReady: false` on error
+- Verified `saveMemory` and `fetchMemories` fall through to Prisma API when Supabase isn't ready
+- Ran `bun run lint` — passes clean
+
+Stage Summary:
+- Local users can now capture memories without Supabase authentication
+- The store starts with `isAuthenticated: true` and `user: { id: 'local', ... }`
+- `requireAuth()` no longer blocks local users — only blocks if `user` is null
+- All Supabase-dependent code paths gracefully fall through to Prisma/SQLite when Supabase is unavailable
