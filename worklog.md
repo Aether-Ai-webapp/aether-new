@@ -1,25 +1,32 @@
 ---
-Task ID: 2
+Task ID: 1
 Agent: Main Agent
-Task: Make AI perfect — auto-tag, AI summary, link reader, related memories, friendly chat, PDF export, memory detail modal
+Task: Build bulletproof data pipeline for Aether capture system
 
 Work Log:
-- Enhanced auto-tag API: changed from 1-2 tags to 3-5 tags
-- Created `/api/memories/related/[id]` — semantic similarity search via pgvector, falls back to keyword matching
-- Created `/api/ai/read-link` — reads URL content using z-ai-web-dev-sdk, falls back to fetch + HTML extraction
-- Added `backgroundAutoSummary` to store — calls `/api/ai/summary` after save, persists summary to Supabase/Prisma
-- Added `backgroundReadLink` to store — when URL saved, reads link content, enriches the memory, then tags + summarizes + embeds it
-- Wired both new actions into the `saveMemory` flow (both Supabase and Prisma paths)
-- Enhanced chat system prompt — warmer, friendlier personality with excitement for connections
-- Rewrote MemoryDetailModal — now shows: AI Summary (with Generate button), Tags, Related Memories (fetched from API), Original Content, Source URL, PDF export, Delete
-- Added PDF export to Settings — "Export PDF" button generates a clean, professional print-ready document
-- Lint: clean
-- Browser verification: modal renders correctly, AI summary Generate works, PDF button present, no errors
+- Read all critical project files (Dashboard.tsx, aether-store.ts, api routes, Prisma schema, etc.)
+- Identified root cause: image uploads sent FormData to JSON-only endpoint, causing silent failures
+- Created new unified `/api/capture/route.ts` endpoint that handles all media types via multipart FormData
+- Added audio transcription via z-ai-web-dev-sdk ASR with Groq Whisper fallback
+- Added image storage (Supabase storage or base64 data URL fallback)
+- Added Gemini Flash cognitive synthesis with 5-second timeout
+- Added keyword-based auto-tagging (work, personal, task, link, recipe, etc.)
+- Added Prisma database insertion as fallback when Supabase unavailable
+- Added fire-and-forget background AI processing (tagging, embedding, link reading)
+- Rewrote Dashboard.tsx event handlers to use new `/api/capture` endpoint
+- Implemented `executeCapture()` as the core pipeline function
+- Added optimistic UI state mutation: `addMemory(newMemory)` on success
+- Removed auth gate from capture flow — unauthenticated users can save locally via Prisma
+- Added `imageUrl` field to Prisma schema and pushed to database
+- Updated `/api/memories` route to include `imageUrl` in responses
+- Fixed background fetch URLs to use absolute paths with `baseUrl`
 
 Stage Summary:
-- Full AI pipeline: save → auto-tag (3-5 tags) → AI summary → link reader (if URL) → embedding for semantic search
-- Memory detail modal: AI Summary + Tags + Related Memories + Original + Source + PDF export
-- Related memories: semantic search via pgvector, keyword fallback
-- Link reader: reads URL content, enriches memory, auto-tags and summarizes
-- PDF export: clean professional document with purple accents
-- Chat: warm, friendly, enthusiastic personality
+- All 4 pipeline tests PASSED:
+  1. Text capture saves with auto-tags (e.g., "recipe", "task")
+  2. URL capture saves as type "link" with correct tags
+  3. New memories appear immediately in the feed
+  4. Auto-tagging engine works correctly
+- Desktop landing page renders correctly with heading, pricing, features, login form
+- Backend API returns proper `{ success: true, memory: {...} }` format
+- Prisma SQLite fallback works for unauthenticated users

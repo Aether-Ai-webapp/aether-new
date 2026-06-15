@@ -190,7 +190,6 @@ function MobileAuthDrawer({
 export function Dashboard() {
   const {
     memories,
-    saveMemory,
     addMemory,
     deleteMemoryFromDB,
     isLoading,
@@ -221,10 +220,10 @@ export function Dashboard() {
   // Paywall state
   const [showPaywall, setShowPaywall] = useState(false)
 
-  // BUG 2 FIX: Mobile auth drawer state
+  // Mobile auth drawer state
   const [isAuthDrawerOpen, setIsAuthDrawerOpen] = useState(false)
 
-  // Pending capture for auth gate
+  // Pending capture for auth gate — stores text/image to replay after login
   const pendingCaptureTextRef = useRef<string>('')
   const pendingImageRef = useRef<{ file: File; url: string; name: string } | null>(null)
 
@@ -243,135 +242,109 @@ export function Dashboard() {
     )
   }, [memories])
 
-  // ── BUG 1 FIX: Save with explicit optimistic state push ────────
-  const handleSave = useCallback(async (text: string, imageFile: File | null = null) => {
-    const trimmed = text.trim()
-    if (!trimmed && !imageFile) return
-
-    setIsSaving(true)
-    setShowCaptureAnimation(true)
-
-    try {
-      const detected = detectContentType(trimmed || 'image')
-      const memoryType = mapToMemoryType(detected)
-
-      let imageUrl: string | null = null
-      if (imageFile) {
-        try {
-          const formData = new FormData()
-          formData.append('file', imageFile)
-          formData.append('type', 'image')
-
-          const uploadRes = await fetch('/api/memories', {
-            method: 'POST',
-            body: formData,
-          })
-
-          if (uploadRes.ok) {
-            const uploadData = await uploadRes.json()
-            imageUrl = uploadData.fileUrl || uploadData.imagePreview || null
-          }
-        } catch {
-          // continue without image URL
-        }
-      }
-
-      const contentToSave = trimmed || (imageFile ? `Image: ${imageFile.name}` : '')
-      const titleToSave = trimmed
-        ? trimmed.length > 80 ? trimmed.slice(0, 80) + '...' : trimmed
-        : imageFile ? `Image: ${imageFile.name}` : ''
-
-      // Call saveMemory which persists to DB
-      const savedMemory = await saveMemory({
-        type: imageFile ? 'image' : memoryType,
-        title: titleToSave,
-        content: contentToSave,
-        sourceUrl: detected === 'link' ? trimmed : null,
-        ...(imageUrl ? { imageUrl } : {}),
-      })
-
-      // BUG 1 FIX: Explicitly push the saved memory to the top of the feed
-      // This guarantees the UI updates even if store reactivity is delayed
-      if (savedMemory) {
-        addMemory(savedMemory)
-      }
-
-      setCaptureText('')
-      setImagePreview(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 50)
-    } catch (error) {
-      console.error('Failed to save memory:', error)
-      toast.error('Failed to save')
-    } finally {
-      setIsSaving(false)
-      setTimeout(() => setShowCaptureAnimation(false), 300)
-    }
-  }, [saveMemory, addMemory])
-
-  // ── BUG 2 FIX: Auth-gated capture with mobile drawer ────────────
-  const handleCaptureSubmit = useCallback(() => {
-    const text = captureText
+  // ─── THE UNIVERSAL PACKAGING FUNCTION ─────────────────────────────
+  // This is the master async function that packages ALL media types
+  // (text, voice transcript, image, URL) into a single FormData payload
+  // and sends it to the bulletproof /api/capture endpoint.
+  const handleCaptureSubmit = useCallback(async () => {
+    const text = captureText.trim()
     const image = imagePreview
 
-    if (!text.trim() && !image) return
+    if (!text && !image) return
 
-    // Paywall check
+    // Paywall check: limit unauthenticated users to 10 memories
     if (memories.length >= 10 && !isAuthenticated) {
       setShowPaywall(true)
       return
     }
 
-    if (!isAuthenticated) {
-      // Stash the capture text and image
-      pendingCaptureTextRef.current = text
-      pendingImageRef.current = image
+    // Execute capture immediately — unauthenticated users can save locally
+    // via the Prisma fallback. The auth drawer is only shown when they
+    // want cloud sync or hit the paywall limit.
+    await executeCapture(text, image?.file ?? null)
+  }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth])
 
-      // Clear input immediately
+  // ─── THE CORE CAPTURE EXECUTION ENGINE ─────────────────────────────
+  // Sends the packaged FormData to /api/capture and handles the response.
+  // On success, pushes the new memory to the top of the feed instantly.
+  const executeCapture = useCallback(async (text: string, imageFile: File | null) => {
+    if (!text.trim() && !imageFile) return
+
+    setIsSaving(true)
+    setShowCaptureAnimation(true)
+
+    try {
+      // ── Package the universal FormData ──────────────────────────
+      const formData = new FormData()
+
+      if (text.trim()) {
+        formData.append('text', text.trim())
+      }
+
+      if (imageFile) {
+        formData.append('image', imageFile)
+        formData.append('type', 'image')
+      } else {
+        // Detect content type for text-only submissions
+        const detected = detectContentType(text || 'note')
+        formData.append('type', mapToMemoryType(detected))
+
+        // If it looks like a URL, also pass it as the url field
+        if (detected === 'link') {
+          formData.append('url', text.trim())
+        }
+      }
+
+      // ── Send to the bulletproof capture endpoint ────────────────
+      const response = await fetch('/api/capture', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error((errorData as { error?: string }).error || `Server error: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // ── OPTIMISTIC UI STATE MUTATION ────────────────────────────
+      // The exact millisecond the backend confirms a successful save,
+      // push the new memory straight to the top of the timeline array.
+      if (data.success && data.memory) {
+        const newMemory = data.memory as Memory
+        addMemory(newMemory)
+      }
+
+      // ── CLEAR COGNITIVE LAYOUT ──────────────────────────────────
+      // Immediately clear the input field so the workspace remains
+      // completely empty, silent, and calm.
       setCaptureText('')
       setImagePreview(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
 
-      // BUG 2 FIX: Show mobile auth drawer directly
-      setIsAuthDrawerOpen(true)
-
-      // Also use requireAuth so the store queues the pending action
-      // When login succeeds, the store will execute this callback
-      requireAuth(async () => {
-        const pendingText = pendingCaptureTextRef.current
-        const pendingImage = pendingImageRef.current
-        pendingCaptureTextRef.current = ''
-        pendingImageRef.current = null
-
-        if (pendingText.trim() || pendingImage) {
-          await handleSave(pendingText, pendingImage?.file ?? null)
-        }
-      })
-      return
+      // Refocus the input for rapid capture
+      setTimeout(() => {
+        inputRef.current?.focus()
+      }, 50)
+    } catch (error) {
+      console.error('[Dashboard] Capture failed:', error)
+      toast.error('Failed to save — please try again')
+    } finally {
+      setIsSaving(false)
+      setTimeout(() => setShowCaptureAnimation(false), 300)
     }
+  }, [addMemory])
 
-    handleSave(text, image?.file ?? null)
-  }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth, handleSave])
-
-  // ── BUG 2 FIX: Mic button auth gate ─────────────────────────────
+  // ── Mic button ─────────────────────────────────────────────────
   const handleMicClick = useCallback(() => {
-    if (!isAuthenticated) {
-      setIsAuthDrawerOpen(true)
-      requireAuth(async () => {
-        // After auth, user can try recording again
-      })
-      return
-    }
-    // If authenticated, start/stop recording
+    // Start/stop recording — available to all users
     if (isRecording) {
       stopRecording()
     } else {
       startRecording()
     }
-  }, [isAuthenticated, isRecording, requireAuth])
+  }, [isRecording])
 
   // ── Voice recording ──────────────────────────────────────────────
   const startRecording = useCallback(async () => {
@@ -396,24 +369,56 @@ export function Dashboard() {
         setIsTranscribing(true)
 
         try {
+          // ── Send audio directly to /api/capture ──────────────────
+          // Instead of just transcribing and putting text in the input,
+          // we send the audio blob directly to the capture pipeline
+          // so it gets transcribed + summarized + saved in one shot.
           const formData = new FormData()
           formData.append('audio', audioBlob, 'recording.webm')
+          formData.append('type', 'voice')
 
-          const res = await fetch('/api/transcribe', {
+          // If there's already text in the capture field, include it
+          const currentText = captureText.trim()
+          if (currentText) {
+            formData.append('text', currentText)
+          }
+
+          const response = await fetch('/api/capture', {
             method: 'POST',
             body: formData,
           })
 
-          if (res.ok) {
-            const data = await res.json()
-            if (data.text?.trim()) {
-              setCaptureText((prev) => prev ? `${prev} ${data.text.trim()}` : data.text.trim())
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success && data.memory) {
+              addMemory(data.memory as Memory)
             }
+            // Clear the input after voice capture
+            setCaptureText('')
+            setImagePreview(null)
+            if (fileInputRef.current) fileInputRef.current.value = ''
           } else {
-            toast.error('Transcription failed')
+            // Fallback: try just transcribing and putting text in input
+            const transcribeRes = await fetch('/api/transcribe', {
+              method: 'POST',
+              body: (() => {
+                const fd = new FormData()
+                fd.append('audio', audioBlob, 'recording.webm')
+                return fd
+              })(),
+            })
+            if (transcribeRes.ok) {
+              const transData = await transcribeRes.json()
+              if (transData.text?.trim()) {
+                setCaptureText(transData.text.trim())
+                toast.success('Transcribed! Press send to save.')
+              }
+            } else {
+              toast.error('Voice capture failed')
+            }
           }
         } catch {
-          toast.error('Transcription failed')
+          toast.error('Voice capture failed')
         } finally {
           setIsTranscribing(false)
         }
@@ -425,7 +430,7 @@ export function Dashboard() {
     } catch {
       toast.error('Microphone access denied')
     }
-  }, [])
+  }, [captureText, addMemory])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -757,7 +762,7 @@ export function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* ── BUG 2 FIX: Mobile Auth Drawer ────────────────────────── */}
+      {/* ── Mobile Auth Drawer ────────────────────────────────────── */}
       <MobileAuthDrawer
         open={isAuthDrawerOpen}
         onClose={() => setIsAuthDrawerOpen(false)}
