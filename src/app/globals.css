@@ -195,3 +195,14 @@
 .animate-capture-fade-up {
   animation: capture-fade-up 250ms ease-in-out forwards;
 }
+
+/* Animated gradient border for premium pricing card */
+@keyframes gradient-border {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient-border {
+  animation: gradient-border 4s ease infinite;
+}

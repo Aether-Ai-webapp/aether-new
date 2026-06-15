@@ -9,6 +9,7 @@ import { Collections } from '@/components/aether/Collections'
 import { Settings } from '@/components/aether/Settings'
 import { DesktopLanding } from '@/components/aether/DesktopLanding'
 import { MobileApp } from '@/components/aether/MobileApp'
+import { AuthDrawer } from '@/components/aether/AuthModal'
 
 function ViewRouter() {
   const currentView = useAetherStore((s) => s.currentView)
@@ -22,7 +23,7 @@ function ViewRouter() {
 }
 
 export default function Home() {
-  const { checkSession, fetchMemories, fetchCollections } = useAetherStore()
+  const { checkSession, fetchMemories, fetchCollections, isAuthenticated } = useAetherStore()
 
   useEffect(() => {
     checkSession()
@@ -32,9 +33,18 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB]">
-      {/* ── Desktop: Landing page (hidden on mobile) ──────────────── */}
+      {/* ── Desktop: Landing page for unauthenticated, App for authenticated ── */}
       <div className="hidden md:block">
-        <DesktopLanding />
+        {isAuthenticated ? (
+          <>
+            <AppShell>
+              <ViewRouter />
+            </AppShell>
+            <AuthDrawer />
+          </>
+        ) : (
+          <DesktopLanding />
+        )}
       </div>
 
       {/* ── Mobile: App view (hidden on desktop) ──────────────────── */}

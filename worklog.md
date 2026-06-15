@@ -1,41 +1,26 @@
+# Aether Worklog
+
 ---
-Task ID: 2
-Agent: Main Agent
-Task: Build Universal Capture Engine + AI Synthesis + Auto-Collections + Inspection Drawer
+Task ID: 1
+Agent: Main Orchestrator
+Task: Complete rebuild of Aether desktop landing page into a $100M-style premium digital experience
 
 Work Log:
-- Added `deepInsight` field to Prisma schema and pushed to database
-- Updated Memory interface in aether-store.ts with `deepInsight` field
-- Updated SupabaseMemoryRow interface and mapSupabaseMemory mapper with `deep_insight` / `deepInsight`
-- Updated /api/memories route GET and POST responses to include `deepInsight`
-- Rewrote /api/capture/route.ts with:
-  - Universal Payload Scanner: classifies text/URL/audio/image from FormData
-  - Cognitive Synthesis Engine: Gemini 1.5 Flash with premium prompt producing {summary, deep_insight, tags}
-  - Autonomous Collections Engine:
-    - Rule 1 (Manual Match): matches memory tags to existing collection names via Levenshtein similarity
-    - Rule 2 (Auto-10): counts uncollected memories by tag, auto-creates collection when 10+ share same tag
-  - Expanded keyword tag map (added health, music, car categories)
-  - 8-second timeout on Gemini synthesis to prevent blocking
-- Rewrote Dashboard.tsx with:
-  - Optimistic UI re-render on capture (addMemory)
-  - Full Inspection Drawer with Framer Motion slide-out:
-    1. AI Summary section (purple Sparkles icon)
-    2. Original content / image / URL display
-    3. Deep Cognitive Insight section (amber Eye icon)
-    4. Tags and collections display
-    5. Download button (exports as markdown file)
-    6. Purge button (DELETE + UI removal)
-  - Voice recording sends audio blob directly to /api/capture
-  - Summary preview in memory feed cards
+- Read all project files: page.tsx, DesktopLanding.tsx, LandingPage.tsx, Dashboard.tsx, AppShell.tsx, MobileApp.tsx, capture/route.ts, aether-store.ts, globals.css
+- Identified critical bug: DesktopLanding returned `null` when authenticated, leaving desktop users with a blank page
+- Fixed page.tsx to show AppShell + ViewRouter when desktop user is authenticated
+- Completely rewrote DesktopLanding.tsx with 3-section premium design:
+  - Section 1: The Purpose Hero - atmospheric typography + 3 glass-morphism purpose cards (Builder, Creative, Divergent Mind)
+  - Section 2: The Interactive Living Demo - simulated browser frame with typing animation, morphing capture bar, AI synthesis reveal
+  - Section 3: The Asymmetric Pricing Matrix - Ambient Tier ($0.00) vs Ascent Premium ($5.99/month) with animated gradient border
+- Added CSS keyframe animation for gradient border (animate-gradient-border)
+- Preserved inline auth form (login/signup) within the free tier card
+- Added testimonial ticker and footer
+- Lint passes clean, dev server compiles without errors (GET / 200)
+- Browser verification confirmed all 3 sections render correctly via accessibility tree snapshot
 
 Stage Summary:
-- All 5 pipeline tests PASSED:
-  1. Text capture with auto-tags (work, design, ai)
-  2. URL capture as link type
-  3. deepInsight field present in API responses
-  4. Corvette/car auto-tagging (car, task)
-  5. Memories feed shows latest captures
-- Desktop landing page renders correctly with "Your mind, entirely unified." heading
-- Auto-collections engine fires in background after each capture
-- Download exports clean markdown with title, summary, insight, content
-- Purge deletes from DB and removes from UI state
+- DesktopLanding.tsx: Complete rewrite with $100M premium design (3 sections + testimonials + footer)
+- page.tsx: Fixed to show AppShell when desktop user is authenticated
+- globals.css: Added gradient-border animation keyframes
+- All code compiles and renders correctly
