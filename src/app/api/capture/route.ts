@@ -28,7 +28,6 @@ function autoGenerateTags(content: string, title: string): string[] {
     task: ['todo', 'remind', 'need to', 'must', 'buy', 'deadline', 'urgent', 'action item'],
     health: ['health', 'doctor', 'exercise', 'workout', 'gym', 'diet', 'sleep', 'mental', 'therapy'],
     music: ['music', 'song', 'album', 'playlist', 'spotify', 'concert', 'band', 'genre'],
-    car: ['car', 'engine', 'vehicle', 'corvette', 'mustang', 'specs', 'horsepower', 'racing'],
   }
 
   const tags: string[] = []
@@ -56,7 +55,7 @@ async function transcribeAudio(audioFile: File): Promise<string> {
     console.error('[capture] z-ai ASR failed:', err instanceof Error ? err.message : 'Unknown')
   }
 
-  // TIER 2: Groq Whisper via REST API
+  // TIER 2: Groq Whisper via REST API (whisper-large-v3-turbo)
   try {
     const groqKey = process.env.NEXT_PUBLIC_GROQ_API_KEY
     if (!groqKey || groqKey === 'placeholder_groq_key') return ''
@@ -134,17 +133,18 @@ interface CognitiveResult {
   tags: string[]
 }
 
-const COGNITIVE_SYSTEM_PROMPT = `You are Aether — an elite, high-fidelity cognitive organizer and second-brain intelligence engine. Your purpose is to transform raw human thought into crystallized insight with the depth and precision of a world-class analytical thinker.
+const COGNITIVE_SYSTEM_PROMPT = `You are the sovereign intelligence core of Aether. Synthesize the raw input data into an exquisite, natural, human-like 2-sentence summary for a timeline feed, along with a deep professional conceptual insight. Do not return markdown headers or labels. Return strictly a single, valid JSON object formatted exactly like this:
+{
+  "summary": "The 2-sentence summary string.",
+  "deep_insight": "The deep professional analysis string.",
+  "tags": ["keyword1", "keyword2", "keyword3"]
+}
 
-You receive raw sensory input — text fragments, voice transcripts, image descriptions, or web links. You must produce a strictly formatted JSON response with exactly three fields:
-
-1. "summary": A pristine, completely natural 2-sentence synthesis of the core thought. Write as if you are a brilliant editor distilling an essay into its essential truth. No robotic phrasing, no filler, no labels like "Summary:" or "This content is about". Just pure, human-readable insight that captures the essence in exactly two sentences.
-
-2. "deep_insight": A deeply analytical, professionally insightful cognitive expansion of this thought. Write 3-4 sentences that reveal hidden connections, implications, or patterns the thinker may not have consciously noticed. Adopt the voice of a wise mentor who sees what lies beneath the surface. Be specific and intellectually rigorous — no platitudes or generic observations. Draw from philosophy, science, business strategy, psychology, or any relevant domain to provide genuine cognitive value.
-
-3. "tags": An array of exactly 3 concise, lowercase keyword strings that conceptually represent the memory's domain. Choose tags that would help cluster this thought with similar ones in a knowledge graph (e.g., ["design", "psychology", "creativity"]). Be specific — prefer "behavioral-economics" over "economics", "distributed-systems" over "code".
-
-Return ONLY the raw JSON object. No markdown formatting, no code blocks, no explanation, no extra text before or after the JSON.`
+Rules:
+- summary: Exactly 2 sentences. Completely natural, human-readable. No robotic phrasing, no filler, no labels like "Summary:". Pure insight.
+- deep_insight: 3-4 sentences of deeply analytical, professionally insightful cognitive expansion. Reveal hidden connections, implications, or patterns. Be specific and intellectually rigorous. No platitudes.
+- tags: Array of exactly 3 concise, lowercase keyword strings that represent the memory's domain. Be specific.
+- Return ONLY the raw JSON object. No markdown formatting, no code blocks, no explanation, no extra text.`
 
 async function generateCognitiveSynthesis(rawText: string): Promise<CognitiveResult> {
   const empty: CognitiveResult = { summary: '', deepInsight: '', tags: [] }
@@ -180,7 +180,14 @@ async function generateCognitiveSynthesis(rawText: string): Promise<CognitiveRes
 
     const { GoogleGenerativeAI } = await import('@google/generative-ai')
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        temperature: 0.5,
+        maxOutputTokens: 600,
+        responseMimeType: 'application/json',
+      },
+    })
 
     const result = await model.generateContent({
       contents: [
@@ -189,7 +196,6 @@ async function generateCognitiveSynthesis(rawText: string): Promise<CognitiveRes
           parts: [{ text: `${COGNITIVE_SYSTEM_PROMPT}\n\nRaw input:\n${rawText.slice(0, 2000)}` }],
         },
       ],
-      generationConfig: { temperature: 0.5, maxOutputTokens: 600 },
     })
 
     const responseText = result.response.text().trim()
@@ -424,23 +430,22 @@ async function checkAutoCollectionRule(userId: string): Promise<void> {
 // ─── Tag-to-icon mapping for auto-created collections ──────────────
 function getTagIcon(tag: string): string {
   const iconMap: Record<string, string> = {
-    work: '💼',
-    personal: '🧘',
-    travel: '✈️',
-    learning: '📚',
-    code: '⚡',
-    design: '🎨',
-    ai: '🤖',
-    recipe: '🍳',
-    idea: '💡',
-    finance: '💰',
-    link: '🔗',
-    task: '✅',
-    health: '❤️',
-    music: '🎵',
-    car: '🏎️',
+    work: '\u{1F4BC}',
+    personal: '\u{1F9D8}',
+    travel: '\u{2708}\u{FE0F}',
+    learning: '\u{1F4DA}',
+    code: '\u{26A1}',
+    design: '\u{1F3A8}',
+    ai: '\u{1F916}',
+    recipe: '\u{1F373}',
+    idea: '\u{1F4A1}',
+    finance: '\u{1F4B0}',
+    link: '\u{1F517}',
+    task: '\u{2705}',
+    health: '\u{2764}\u{FE0F}',
+    music: '\u{1F3B5}',
   }
-  return iconMap[tag] || '📁'
+  return iconMap[tag] || '\u{1F4C1}'
 }
 
 // ─── Levenshtein similarity for fuzzy tag matching ─────────────────
@@ -499,7 +504,7 @@ function buildMemoryResponse(
 // ═══════════════════════════════════════════════════════════════════════
 export async function POST(req: NextRequest) {
   try {
-    // ── STEP 1: UNIVERSAL PAYLOAD SCANNER ─────────────────────────────
+    // ── STEP 1: MULTI-MEDIA PAYLOAD INGESTION ─────────────────────
     const formData = await req.formData()
 
     const textInput = (formData.get('text') as string) || ''
@@ -520,7 +525,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── STEP 2: AUTHENTICATE USER VIA SUPABASE ───────────────────────
+    // ── STEP 2: AUTHENTICATE USER VIA SUPABASE ────────────────────
     let supabaseUserId: string | null = null
     let useSupabase = false
 
@@ -532,11 +537,10 @@ export async function POST(req: NextRequest) {
         useSupabase = true
       }
     } catch {
-      // Supabase not configured — fall back to Prisma
       useSupabase = false
     }
 
-    // ── STEP 3: DYNAMIC INPUT DISPATCHING ────────────────────────────
+    // ── STEP 3: DISPATCH CHANNELS ─────────────────────────────────
 
     // 3a: Transcribe audio if present (z-ai ASR → Groq Whisper)
     let audioTranscript = ''
@@ -599,7 +603,7 @@ export async function POST(req: NextRequest) {
       title = imageFile ? `Image: ${imageFile.name}` : 'Image'
     }
 
-    // ── STEP 4: COGNITIVE SYNTHESIS — 3-TIER AI PIPELINE ───────────
+    // ── STEP 4: HIGH-END COGNITIVE SYNTHESIS (3-TIER AI PIPELINE) ─
     const textForSynthesis = rawContent || (hasUrl ? urlInput : '')
     let cleanedSummary: string | null = null
     let deepInsight: string | null = null
@@ -630,7 +634,7 @@ export async function POST(req: NextRequest) {
       ? [...new Set([...aiTags, ...keywordTags])].slice(0, 5)
       : keywordTags
 
-    // ── STEP 5: DATABASE INGESTION ───────────────────────────────────
+    // ── STEP 5: DATABASE INGESTION & AUTO-COLLECTIONS ─────────────
     let memory: Record<string, unknown>
 
     // 5a: Supabase-first insertion (authenticated users with RLS)
@@ -671,25 +675,7 @@ export async function POST(req: NextRequest) {
 
         memory = buildMemoryResponse(row, collectionsFromRow)
 
-        // Background: embedding + link reading + auto-collections
-        if (rawContent.trim()) {
-          const baseUrl = new URL(req.url).origin
-          fetch(`${baseUrl}/api/generate-embedding`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ memoryId: memory.id, content: rawContent.slice(0, 2000) }),
-          }).catch(() => {})
-        }
-
-        if (sourceUrl?.trim()) {
-          const baseUrl = new URL(req.url).origin
-          fetch(`${baseUrl}/api/ai/read-link`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: sourceUrl }),
-          }).catch(() => {})
-        }
-
+        // Background: autonomous collections engine
         runAutonomousCollections(memory.id as string, finalTags, supabaseUserId).catch(() => {})
 
         return NextResponse.json({ success: true, memory })
@@ -749,25 +735,6 @@ export async function POST(req: NextRequest) {
           icon: mc.collection.icon,
         }))
       )
-
-      // Background: embedding + link reading
-      if (rawContent.trim()) {
-        const baseUrl = new URL(req.url).origin
-        fetch(`${baseUrl}/api/generate-embedding`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memoryId: prismaMemory.id, content: rawContent.slice(0, 2000) }),
-        }).catch(() => {})
-      }
-
-      if (sourceUrl?.trim()) {
-        const baseUrl = new URL(req.url).origin
-        fetch(`${baseUrl}/api/ai/read-link`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: sourceUrl }),
-        }).catch(() => {})
-      }
 
       return NextResponse.json({ success: true, memory })
     } catch (err) {
@@ -843,7 +810,6 @@ export async function DELETE(req: NextRequest) {
         await db.memory.delete({ where: { id: memoryId } })
       } catch (prismaErr) {
         console.error('[capture] Prisma delete failed:', prismaErr instanceof Error ? prismaErr.message : 'Unknown')
-        // If both failed, return error
         if (!supabaseDeleted) {
           return NextResponse.json(
             { success: false, error: 'Failed to delete memory' },

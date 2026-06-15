@@ -1,0 +1,644 @@
+   300→
+   301→  // ═════════════════════════════════════════════════════════════════
+   302→  // ─── THE UNIVERSAL CAPTURE SUBMIT ────────────────────────────────
+   303→  // ═════════════════════════════════════════════════════════════════
+   304→  const handleCaptureSubmit = useCallback(async () => {
+   305→    const text = captureText.trim()
+   306→    const image = imagePreview
+   307→
+   308→    if (!text && !image) return
+   309→
+   310→    // Paywall check: limit unauthenticated users to 10 memories
+   311→    if (memories.length >= 10 && !isAuthenticated) {
+   312→      setShowPaywall(true)
+   313→      return
+   314→    }
+   315→
+   316→    setIsSaving(true)
+   317→    setShowCaptureAnimation(true)
+   318→
+   319→    try {
+   320→      // ── Package the universal FormData ──────────────────────────
+   321→      const formData = new FormData()
+   322→
+   323→      if (text.trim()) {
+   324→        formData.append('text', text.trim())
+   325→      }
+   326→
+   327→      if (image?.file) {
+   328→        formData.append('image', image.file)
+   329→        formData.append('type', 'image')
+   330→      } else {
+   331→        const detected = detectContentType(text || 'note')
+   332→        formData.append('type', mapToMemoryType(detected))
+   333→
+   334→        if (detected === 'link') {
+   335→          formData.append('url', text.trim())
+   336→        }
+   337→      }
+   338→
+   339→      // ── Send to the bulletproof capture endpoint ────────────────
+   340→      const response = await fetch('/api/capture', {
+   341→        method: 'POST',
+   342→        body: formData,
+   343→      })
+   344→
+   345→      if (!response.ok) {
+   346→        const errorData = await response.json().catch(() => ({}))
+   347→        const errorMessage = (errorData as { error?: string }).error || `Server error: ${response.status}`
+   348→        throw new Error(errorMessage)
+   349→      }
+   350→
+   351→      const data = await response.json()
+   352→
+   353→      // ── INSTANT RE-RENDER: push to timeline the millisecond we get success ──
+   354→      if (data.success && data.memory) {
+   355→        const newMemory = data.memory as Memory
+   356→        addMemory(newMemory)
+   357→      }
+   358→
+   359→      // ── CLEAR THE COGNITIVE LAYOUT ──────────────────────────────
+   360→      setCaptureText('')
+   361→      setImagePreview(null)
+   362→      if (fileInputRef.current) fileInputRef.current.value = ''
+   363→
+   364→      // Refocus the input for rapid capture
+   365→      setTimeout(() => {
+   366→        inputRef.current?.focus()
+   367→      }, 50)
+   368→    } catch (error) {
+   369→      console.error('[Dashboard] Capture failed:', error)
+   370→      const message = error instanceof Error ? error.message : 'Failed to save — please try again'
+   371→      toast.error(message)
+   372→    } finally {
+   373→      setIsSaving(false)
+   374→      setTimeout(() => setShowCaptureAnimation(false), 300)
+   375→    }
+   376→  }, [captureText, imagePreview, memories.length, isAuthenticated, addMemory])
+   377→
+   378→  // ═════════════════════════════════════════════════════════════════
+   379→  // ─── VOICE RECORDING ─────────────────────────────────────────────
+   380→  // ═════════════════════════════════════════════════════════════════
+   381→
+   382→  const handleMicClick = useCallback(() => {
+   383→    if (isRecording) {
+   384→      stopRecording()
+   385→    } else {
+   386→      startRecording()
+   387→    }
+   388→  }, [isRecording])
+   389→
+   390→  const startRecording = useCallback(async () => {
+   391→    try {
+   392→      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+   393→      const mediaRecorder = new MediaRecorder(stream, {
+   394→        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+   395→          ? 'audio/webm;codecs=opus'
+   396→          : 'audio/webm',
+   397→      })
+   398→      audioChunksRef.current = []
+   399→
+   400→      mediaRecorder.ondataavailable = (event) => {
+   401→        if (event.data.size > 0) {
+   402→          audioChunksRef.current.push(event.data)
+   403→        }
+   404→      }
+   405→
+   406→      mediaRecorder.onstop = async () => {
+   407→        stream.getTracks().forEach((track) => track.stop())
+   408→        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+   409→        setIsTranscribing(true)
+   410→
+   411→        try {
+   412→          // Send audio directly to /api/capture for full pipeline processing
+   413→          const formData = new FormData()
+   414→          formData.append('audio', audioBlob, 'recording.webm')
+   415→          formData.append('type', 'voice')
+   416→
+   417→          const currentText = captureText.trim()
+   418→          if (currentText) {
+   419→            formData.append('text', currentText)
+   420→          }
+   421→
+   422→          const response = await fetch('/api/capture', {
+   423→            method: 'POST',
+   424→            body: formData,
+   425→          })
+   426→
+   427→          if (response.ok) {
+   428→            const data = await response.json()
+   429→            if (data.success && data.memory) {
+   430→              addMemory(data.memory as Memory)
+   431→            }
+   432→            setCaptureText('')
+   433→            setImagePreview(null)
+   434→            if (fileInputRef.current) fileInputRef.current.value = ''
+   435→          } else {
+   436→            // Fallback: try to transcribe and put text in input
+   437→            try {
+   438→              const transcribeRes = await fetch('/api/transcribe', {
+   439→                method: 'POST',
+   440→                body: (() => {
+   441→                  const fd = new FormData()
+   442→                  fd.append('audio', audioBlob, 'recording.webm')
+   443→                  return fd
+   444→                })(),
+   445→              })
+   446→              if (transcribeRes.ok) {
+   447→                const transData = await transcribeRes.json()
+   448→                if (transData.text?.trim()) {
+   449→                  setCaptureText(transData.text.trim())
+   450→                  toast.success('Transcribed! Press send to save.')
+   451→                }
+   452→              } else {
+   453→                toast.error('Voice capture failed')
+   454→              }
+   455→            } catch {
+   456→              toast.error('Voice capture failed')
+   457→            }
+   458→          }
+   459→        } catch {
+   460→          toast.error('Voice capture failed')
+   461→        } finally {
+   462→          setIsTranscribing(false)
+   463→        }
+   464→      }
+   465→
+   466→      mediaRecorderRef.current = mediaRecorder
+   467→      mediaRecorder.start()
+   468→      setIsRecording(true)
+   469→    } catch {
+   470→      toast.error('Microphone access denied')
+   471→    }
+   472→  }, [captureText, addMemory])
+   473→
+   474→  const stopRecording = useCallback(() => {
+   475→    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+   476→      mediaRecorderRef.current.stop()
+   477→      setIsRecording(false)
+   478→    }
+   479→  }, [])
+   480→
+   481→  // ═════════════════════════════════════════════════════════════════
+   482→  // ─── IMAGE UPLOAD ────────────────────────────────────────────────
+   483→  // ═════════════════════════════════════════════════════════════════
+   484→
+   485→  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   486→    const file = e.target.files?.[0]
+   487→    if (!file) return
+   488→    if (!file.type.startsWith('image/')) {
+   489→      toast.error('Only image files')
+   490→      return
+   491→    }
+   492→    if (file.size > 10 * 1024 * 1024) {
+   493→      toast.error('Under 10MB')
+   494→      return
+   495→    }
+   496→    const url = URL.createObjectURL(file)
+   497→    setImagePreview({ file, url, name: file.name })
+   498→  }, [])
+   499→
+   500→  const removeImage = useCallback(() => {
+   501→    if (imagePreview) URL.revokeObjectURL(imagePreview.url)
+   502→    setImagePreview(null)
+   503→    if (fileInputRef.current) fileInputRef.current.value = ''
+   504→  }, [imagePreview])
+   505→
+   506→  // ═════════════════════════════════════════════════════════════════
+   507→  // ─── INSPECTION DRAWER ──────────────────────────────────────────
+   508→  // ═════════════════════════════════════════════════════════════════
+   509→
+   510→  const openDrawer = useCallback((memory: Memory) => {
+   511→    setSelectedMemory(memory)
+   512→    setDrawerOpen(true)
+   513→    setConfirmPurge(false)
+   514→  }, [])
+   515→
+   516→  const closeDrawer = useCallback(() => {
+   517→    setDrawerOpen(false)
+   518→    setConfirmPurge(false)
+   519→    setTimeout(() => setSelectedMemory(null), 300)
+   520→  }, [])
+   521→
+   522→  // ── PURGE MEMORY — Delete from Supabase + vanish from UI ────────
+   523→  const handlePurge = useCallback(async (id: string) => {
+   524→    try {
+   525→      // 1. Delete from Supabase via the dedicated DELETE endpoint
+   526→      const response = await fetch(`/api/capture?id=${id}`, {
+   527→        method: 'DELETE',
+   528→      })
+   529→
+   530→      if (!response.ok) {
+   531→        // Fallback to the store method if our API fails
+   532→        await deleteMemoryFromDB(id)
+   533→      }
+   534→
+   535→      // 2. Instantly remove from the UI array
+   536→      deleteMemory(id)
+   537→
+   538→      // 3. Close the drawer
+   539→      closeDrawer()
+   540→      toast.success('Memory purged')
+   541→    } catch {
+   542→      // Last resort: try the store method
+   543→      try {
+   544→        await deleteMemoryFromDB(id)
+   545→        closeDrawer()
+   546→        toast.success('Memory purged')
+   547→      } catch {
+   548→        toast.error('Failed to purge memory')
+   549→      }
+   550→    }
+   551→  }, [deleteMemory, deleteMemoryFromDB, closeDrawer])
+   552→
+   553→  // ── DOWNLOAD MEMORY AS MARKDOWN ──────────────────────────────────
+   554→  const handleDownload = useCallback((memory: Memory) => {
+   555→    downloadMemoryAsMarkdown(memory)
+   556→    toast.success('Downloaded as markdown')
+   557→  }, [])
+   558→
+   559→  // ── Keyboard handler ─────────────────────────────────────────────
+   560→  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+   561→    if (e.key === 'Enter' && !e.shiftKey) {
+   562→      e.preventDefault()
+   563→      handleCaptureSubmit()
+   564→    }
+   565→  }, [handleCaptureSubmit])
+   566→
+   567→  // ═════════════════════════════════════════════════════════════════
+   568→  // ─── RENDER ──────────────────────────────────────────────────────
+   569→  // ═════════════════════════════════════════════════════════════════
+   570→  return (
+   571→    <div className="flex flex-col h-full">
+   572→      {/* ── MEMORY FEED TIMELINE ────────────────────────────────────── */}
+   573→      <div className="flex-1 overflow-y-auto px-4 md:px-0">
+   574→        <div className="max-w-2xl mx-auto">
+   575→          {isLoading && memories.length === 0 ? (
+   576→            <div className="flex items-center justify-center py-24">
+   577→              <Loader2 className="size-6 animate-spin text-gray-300" />
+   578→            </div>
+   579→          ) : sortedMemories.length === 0 ? (
+   580→            <div className="flex flex-col items-center justify-center py-24">
+   581→              <Brain className="size-10 text-gray-200" />
+   582→            </div>
+   583→          ) : (
+   584→            <div className="divide-y divide-black/[0.03]">
+   585→              <AnimatePresence mode="popLayout">
+   586→                {sortedMemories.map((memory, index) => {
+   587→                  const detected = detectContentType(memory.content || memory.title)
+   588→                  const IconComponent = typeIconMap[memory.type] || typeIconMap[detected] || FileText
+   589→                  const staggerDelay = Math.min(index * 0.03, 0.15)
+   590→
+   591→                  return (
+   592→                    <motion.button
+   593→                      key={memory.id}
+   594→                      initial={{ opacity: 0, y: 6 }}
+   595→                      animate={{ opacity: 1, y: 0 }}
+   596→                      exit={{ opacity: 0, y: -6 }}
+   597→                      transition={{ duration: 0.2, delay: staggerDelay, ease: 'easeOut' }}
+   598→                      onClick={() => openDrawer(memory)}
+   599→                      className="w-full flex items-center gap-3 py-3.5 px-1 text-left group hover:bg-black/[0.015] rounded-lg transition-colors"
+   600→                    >
+   601→                      <div className="shrink-0 size-8 flex items-center justify-center">
+   602→                        <IconComponent className="size-4 text-gray-300 group-hover:text-gray-400 transition-colors" />
+   603→                      </div>
+   604→                      <div className="flex-1 min-w-0">
+   605→                        <p className="text-sm text-gray-800 line-clamp-2 leading-snug">
+   606→                          {memory.title || memory.content}
+   607→                        </p>
+   608→                        {memory.summary && (
+   609→                          <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">
+   610→                            {memory.summary}
+   611→                          </p>
+   612→                        )}
+   613→                      </div>
+   614→                      <span className="shrink-0 text-[11px] text-gray-300 tabular-nums">
+   615→                        {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
+   616→                      </span>
+   617→                      <ChevronRight className="size-4 text-gray-200 group-hover:text-gray-300 shrink-0 transition-colors" />
+   618→                    </motion.button>
+   619→                  )
+   620→                })}
+   621→              </AnimatePresence>
+   622→            </div>
+   623→          )}
+   624→        </div>
+   625→      </div>
+   626→
+   627→      {/* ══════════════════════════════════════════════════════════════ */}
+   628→      {/* ── CAPTURE BAR ────────────────────────────────────────────── */}
+   629→      {/* ══════════════════════════════════════════════════════════════ */}
+   630→      <div className="shrink-0 px-4 pb-4 pt-2 md:px-0">
+   631→        <div className="max-w-2xl mx-auto">
+   632→          {/* Image preview pill */}
+   633→          <AnimatePresence>
+   634→            {imagePreview && (
+   635→              <motion.div
+   636→                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+   637→                animate={{ opacity: 1, y: 0, scale: 1 }}
+   638→                exit={{ opacity: 0, y: 8, scale: 0.95 }}
+   639→                transition={{ duration: 0.2 }}
+   640→                className="mb-2 inline-flex items-center gap-2 bg-white/90 border border-black/[0.06] rounded-xl pl-1.5 pr-2.5 py-1.5 shadow-sm"
+   641→              >
+   642→                <img src={imagePreview.url} alt={imagePreview.name} className="size-8 rounded-lg object-cover" />
+   643→                <span className="text-xs text-gray-500 max-w-[120px] truncate">{imagePreview.name}</span>
+   644→                <button onClick={removeImage} className="size-4 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors">
+   645→                  <X className="size-3 text-gray-400" />
+   646→                </button>
+   647→              </motion.div>
+   648→            )}
+   649→          </AnimatePresence>
+   650→
+   651→          {/* Glass capsule input */}
+   652→          <div
+   653→            className={cn(
+   654→              'bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2',
+   655→              'focus-within:border-purple-300/60 focus-within:shadow-[0_0_40px_rgba(168,85,247,0.04)]',
+   656→              'transition-all duration-200',
+   657→              showCaptureAnimation && 'border-purple-300/80 shadow-[0_0_60px_rgba(168,85,247,0.08)]'
+   658→            )}
+   659→          >
+   660→            <div className="flex items-center gap-1.5">
+   661→              {/* Mic button */}
+   662→              <button
+   663→                onClick={handleMicClick}
+   664→                disabled={isTranscribing || isSaving}
+   665→                className={cn(
+   666→                  'size-9 rounded-xl flex items-center justify-center transition-all shrink-0',
+   667→                  isRecording
+   668→                    ? 'bg-red-50 text-red-500 hover:bg-red-100'
+   669→                    : isTranscribing
+   670→                      ? 'bg-gray-50 text-gray-400'
+   671→                      : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+   672→                )}
+   673→              >
+   674→                {isTranscribing ? (
+   675→                  <Loader2 className="size-4 animate-spin" />
+   676→                ) : isRecording ? (
+   677→                  <MicOff className="size-4" />
+   678→                ) : (
+   679→                  <Mic className="size-4" />
+   680→                )}
+   681→              </button>
+   682→
+   683→              {/* Text input */}
+   684→              <input
+   685→                ref={inputRef}
+   686→                type="text"
+   687→                value={captureText}
+   688→                onChange={(e) => setCaptureText(e.target.value)}
+   689→                onKeyDown={handleKeyDown}
+   690→                placeholder=""
+   691→                disabled={isSaving}
+   692→                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none min-w-0 py-1.5 px-1"
+   693→              />
+   694→
+   695→              {/* Image upload button */}
+   696→              <button
+   697→                onClick={() => fileInputRef.current?.click()}
+   698→                disabled={isSaving}
+   699→                className="size-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-all shrink-0"
+   700→              >
+   701→                <ImageIcon className="size-4" />
+   702→              </button>
+   703→              <input
+   704→                ref={fileInputRef}
+   705→                type="file"
+   706→                accept="image/*"
+   707→                onChange={handleImageSelect}
+   708→                className="hidden"
+   709→              />
+   710→
+   711→              {/* Send button */}
+   712→              <button
+   713→                onClick={handleCaptureSubmit}
+   714→                disabled={(!captureText.trim() && !imagePreview) || isSaving}
+   715→                className={cn(
+   716→                  'size-9 rounded-xl flex items-center justify-center transition-all shrink-0',
+   717→                  captureText.trim() || imagePreview
+   718→                    ? 'bg-gray-900 text-white hover:bg-gray-800'
+   719→                    : 'bg-gray-100 text-gray-400'
+   720→                )}
+   721→              >
+   722→                {isSaving ? (
+   723→                  <Loader2 className="size-4 animate-spin" />
+   724→                ) : (
+   725→                  <Send className="size-4" />
+   726→                )}
+   727→              </button>
+   728→            </div>
+   729→          </div>
+   730→        </div>
+   731→      </div>
+   732→
+   733→      {/* ══════════════════════════════════════════════════════════════ */}
+   734→      {/* ── FULL INSPECTION DRAWER (slide-out from right) ──────────── */}
+   735→      {/* ══════════════════════════════════════════════════════════════ */}
+   736→      <AnimatePresence>
+   737→        {drawerOpen && (
+   738→          <>
+   739→            {/* Backdrop */}
+   740→            <motion.div
+   741→              initial={{ opacity: 0 }}
+   742→              animate={{ opacity: 1 }}
+   743→              exit={{ opacity: 0 }}
+   744→              transition={{ duration: 0.2 }}
+   745→              className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-40"
+   746→              onClick={closeDrawer}
+   747→            />
+   748→
+   749→            {/* Drawer panel */}
+   750→            <motion.div
+   751→              initial={{ x: '100%' }}
+   752→              animate={{ x: 0 }}
+   753→              exit={{ x: '100%' }}
+   754→              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   755→              className="fixed top-0 right-0 h-full w-full max-w-md bg-white/95 backdrop-blur-2xl border-l border-black/[0.04] z-50 flex flex-col overflow-hidden"
+   756→            >
+   757→              {selectedMemory && (
+   758→                <>
+   759→                  {/* ── Drawer Header ────────────────────────────────── */}
+   760→                  <div className="shrink-0 flex items-center justify-between px-6 h-14 border-b border-black/[0.04]">
+   761→                    <div className="flex items-center gap-2 text-xs text-gray-400">
+   762→                      <Clock className="size-3.5" />
+   763→                      {formatDistanceToNow(new Date(selectedMemory.createdAt), { addSuffix: true })}
+   764→                    </div>
+   765→                    <button
+   766→                      onClick={closeDrawer}
+   767→                      className="size-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+   768→                    >
+   769→                      <X className="size-4" />
+   770→                    </button>
+   771→                  </div>
+   772→
+   773→                  {/* ── Drawer Content (scrollable) ──────────────────── */}
+   774→                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+   775→
+   776→                    {/* Title */}
+   777→                    <h2 className="text-lg font-semibold text-gray-900 leading-snug">
+   778→                      {selectedMemory.title || selectedMemory.content}
+   779→                    </h2>
+   780→
+   781→                    {/* ── 1. AI SUMMARY (2-sentence) ──────────────────── */}
+   782→                    {selectedMemory.summary && (
+   783→                      <div className="space-y-2">
+   784→                        <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
+   785→                          <Sparkles className="size-3" />
+   786→                          AI Summary
+   787→                        </div>
+   788→                        <p className="text-sm text-gray-600 leading-relaxed">
+   789→                          {selectedMemory.summary}
+   790→                        </p>
+   791→                      </div>
+   792→                    )}
+   793→
+   794→                    {/* ── 2. IMAGE / RAW ORIGINAL CONTENT ────────────── */}
+   795→                    {selectedMemory.imageUrl && (
+   796→                      <div className="rounded-xl overflow-hidden border border-black/[0.04]">
+   797→                        <img
+   798→                          src={selectedMemory.imageUrl}
+   799→                          alt={selectedMemory.title || 'Memory image'}
+   800→                          className="w-full object-cover max-h-64"
+   801→                        />
+   802→                      </div>
+   803→                    )}
+   804→
+   805→                    {(selectedMemory.imagePreview || selectedMemory.fileUrl) && !selectedMemory.imageUrl && (
+   806→                      <div className="rounded-xl overflow-hidden border border-black/[0.04]">
+   807→                        <img
+   808→                          src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''}
+   809→                          alt={selectedMemory.title || 'Memory image'}
+   810→                          className="w-full object-cover max-h-64"
+   811→                        />
+   812→                      </div>
+   813→                    )}
+   814→
+   815→                    {/* Raw original content (if different from title) */}
+   816→                    {selectedMemory.content && selectedMemory.content !== selectedMemory.title && (
+   817→                      <div className="space-y-2">
+   818→                        <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+   819→                          <FileText className="size-3" />
+   820→                          Original Content
+   821→                        </div>
+   822→                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-3 max-h-60 overflow-y-auto">
+   823→                          {selectedMemory.content}
+   824→                        </div>
+   825→                      </div>
+   826→                    )}
+   827→
+   828→                    {/* Source URL */}
+   829→                    {selectedMemory.sourceUrl && (
+   830→                      <a
+   831→                        href={selectedMemory.sourceUrl}
+   832→                        target="_blank"
+   833→                        rel="noopener noreferrer"
+   834→                        className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all"
+   835→                      >
+   836→                        <Link2 className="size-3 shrink-0" />
+   837→                        {selectedMemory.sourceUrl}
+   838→                      </a>
+   839→                    )}
+   840→
+   841→                    {/* ── 3. DEEP COGNITIVE INSIGHT ──────────────────── */}
+   842→                    {(selectedMemory.deepInsight || selectedMemory.recap) && (
+   843→                      <div className="space-y-2">
+   844→                        <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
+   845→                          <Eye className="size-3" />
+   846→                          Cognitive Insight
+   847→                        </div>
+   848→                        <div className="text-sm text-gray-700 leading-relaxed bg-amber-50/50 border border-amber-100/50 rounded-xl p-3">
+   849→                          {selectedMemory.deepInsight || selectedMemory.recap}
+   850→                        </div>
+   851→                      </div>
+   852→                    )}
+   853→
+   854→                    {/* ── Tags ─────────────────────────────────────── */}
+   855→                    {selectedMemory.tags.length > 0 && (
+   856→                      <div className="flex flex-wrap gap-1.5">
+   857→                        {selectedMemory.tags.map((tag) => (
+   858→                          <span
+   859→                            key={tag}
+   860→                            className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium"
+   861→                          >
+   862→                            {tag}
+   863→                          </span>
+   864→                        ))}
+   865→                      </div>
+   866→                    )}
+   867→
+   868→                    {/* ── Collections ──────────────────────────────── */}
+   869→                    {selectedMemory.collections.length > 0 && (
+   870→                      <div className="flex flex-wrap gap-1.5">
+   871→                        {selectedMemory.collections.map((col) => (
+   872→                          <span
+   873→                            key={col.id}
+   874→                            className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1"
+   875→                          >
+   876→                            {col.icon && <span>{col.icon}</span>}
+   877→                            {col.name}
+   878→                          </span>
+   879→                        ))}
+   880→                      </div>
+   881→                    )}
+   882→
+   883→                    {/* Timestamp detail */}
+   884→                    <div className="text-[11px] text-gray-300">
+   885→                      {new Date(selectedMemory.createdAt).toLocaleString()}
+   886→                    </div>
+   887→                  </div>
+   888→
+   889→                  {/* ── Drawer Actions (sticky bottom) ────────────────── */}
+   890→                  <div className="shrink-0 px-6 py-4 border-t border-black/[0.04] flex items-center gap-3">
+   891→                    {/* 4. Download Card button */}
+   892→                    <button
+   893→                      onClick={() => handleDownload(selectedMemory)}
+   894→                      className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
+   895→                    >
+   896→                      <Download className="size-3.5" />
+   897→                      Export .md
+   898→                    </button>
+   899→
+   900→                    <div className="flex-1" />
+   901→
+   902→                    {/* 5. Purge Memory button */}
+   903→                    {!confirmPurge ? (
+   904→                      <button
+   905→                        onClick={() => setConfirmPurge(true)}
+   906→                        className="flex items-center gap-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+   907→                      >
+   908→                        <Trash2 className="size-3.5" />
+   909→                        Purge Memory
+   910→                      </button>
+   911→                    ) : (
+   912→                      <div className="flex items-center gap-2">
+   913→                        <AlertTriangle className="size-3.5 text-red-500" />
+   914→                        <span className="text-xs text-red-500 font-medium">Sure?</span>
+   915→                        <button
+   916→                          onClick={() => handlePurge(selectedMemory.id)}
+   917→                          className="flex items-center gap-1.5 text-xs text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors"
+   918→                        >
+   919→                          <Trash2 className="size-3" />
+   920→                          Delete
+   921→                        </button>
+   922→                        <button
+   923→                          onClick={() => setConfirmPurge(false)}
+   924→                          className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+   925→                        >
+   926→                          Cancel
+   927→                        </button>
+   928→                      </div>
+   929→                    )}
+   930→                  </div>
+   931→                </>
+   932→              )}
+   933→            </motion.div>
+   934→          </>
+   935→        )}
+   936→      </AnimatePresence>
+   937→
+   938→      {/* ── Paywall Modal ────────────────────────────────────────── */}
+   939→      <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} isDark={false} />
+   940→    </div>
+   941→  )
+   942→}
+   943→

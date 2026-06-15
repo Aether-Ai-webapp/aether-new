@@ -1,0 +1,761 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import {
+     6→  Sparkles,
+     7→  Star,
+     8→  Loader2,
+     9→  Terminal,
+    10→  Palette,
+    11→  Wind,
+    12→  Send,
+    13→  Brain,
+    14→  Mic,
+    15→  CheckCircle2,
+    16→  ArrowRight,
+    17→} from 'lucide-react'
+    18→import { useAetherStore } from '@/lib/aether-store'
+    19→import { cn } from '@/lib/utils'
+    20→import { toast } from 'sonner'
+    21→
+    22→// ═══════════════════════════════════════════════════════════════════════
+    23→// ─── ANIMATION VARIANTS ──────────────────────────────────────────────
+    24→// ═══════════════════════════════════════════════════════════════════════
+    25→
+    26→const fadeUp = {
+    27→  hidden: { opacity: 0, y: 20 },
+    28→  visible: (i: number) => ({
+    29→    opacity: 1,
+    30→    y: 0,
+    31→    transition: { delay: i * 0.1, duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+    32→  }),
+    33→}
+    34→
+    35→const staggerContainer = {
+    36→  hidden: {},
+    37→  visible: {
+    38→    transition: { staggerChildren: 0.12, delayChildren: 0.3 },
+    39→  },
+    40→}
+    41→
+    42→const staggerChild = {
+    43→  hidden: { opacity: 0, y: 16 },
+    44→  visible: {
+    45→    opacity: 1,
+    46→    y: 0,
+    47→    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+    48→  },
+    49→}
+    50→
+    51→const scaleIn = {
+    52→  hidden: { opacity: 0, scale: 0.95 },
+    53→  visible: {
+    54→    opacity: 1,
+    55→    scale: 1,
+    56→    transition: { duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] },
+    57→  },
+    58→}
+    59→
+    60→// ═══════════════════════════════════════════════════════════════════════
+    61→// ─── SECTION 1 DATA: PURPOSE CARDS ──────────────────────────────────
+    62→// ═══════════════════════════════════════════════════════════════════════
+    63→
+    64→const purposeCards = [
+    65→  {
+    66→    icon: Terminal,
+    67→    title: 'The Builder',
+    68→    description:
+    69→      'Capture raw terminal logic, API schemas, and late-night feature pivots in one spoken sentence.',
+    70→    gradient: 'from-violet-500/10 to-purple-500/10',
+    71→    iconColor: 'text-violet-500',
+    72→  },
+    73→  {
+    74→    icon: Palette,
+    75→    title: 'The Creative',
+    76→    description:
+    77→      'Drop design URLs, color mood boards, and aesthetic flashes before the spark vanishes.',
+    78→    gradient: 'from-rose-500/10 to-pink-500/10',
+    79→    iconColor: 'text-rose-500',
+    80→  },
+    81→  {
+    82→    icon: Wind,
+    83→    title: 'The Divergent Mind',
+    84→    description:
+    85→      'Zero folders. Zero tagging chores. Just talk, close the tab, and breathe. The system organizes behind the scenes.',
+    86→    gradient: 'from-amber-500/10 to-orange-500/10',
+    87→    iconColor: 'text-amber-500',
+    88→  },
+    89→]
+    90→
+    91→// ═══════════════════════════════════════════════════════════════════════
+    92→// ─── SECTION 2: TYPING SIMULATION ──────────────────────────────────
+    93→// ═══════════════════════════════════════════════════════════════════════
+    94→
+    95→const TYPING_TEXT =
+    96→  'Need to design the custom PC build matrix tomorrow using an AMD Ryzen 5 7600X and a minimalist purple case layout...'
+    97→
+    98→const AI_SYNTHESIS =
+    99→  'Project Hub: PC Custom Matrix Architecture configured with high-performance Ryzen components and a minimalist purple aesthetic.'
+   100→
+   101→// ═══════════════════════════════════════════════════════════════════════
+   102→// ─── SECTION 3: PRICING DATA ──────────────────────────────────────
+   103→// ═══════════════════════════════════════════════════════════════════════
+   104→
+   105→const ambientFeatures = [
+   106→  '15 Cognitive Captures per month',
+   107→  'Standard Voice Transcription',
+   108→  'Local Device Cache Timelines',
+   109→]
+   110→
+   111→const ascentFeatures = [
+   112→  'Infinite Cognitive Scale',
+   113→  'Sub-second Groq Whisper Engine',
+   114→  'Continuous Gemini Multi-Note Synthesis',
+   115→  'Autonomous Vector Collections',
+   116→  'Deep Cognitive Insights',
+   117→]
+   118→
+   119→// ═══════════════════════════════════════════════════════════════════════
+   120→// ─── TESTIMONIALS ──────────────────────────────────────────────────
+   121→// ═══════════════════════════════════════════════════════════════════════
+   122→
+   123→const testimonials = [
+   124→  { name: 'Sarah K.', text: 'Aether completely transformed how I capture and connect my ideas.' },
+   125→  { name: 'James L.', text: 'The AI recall is unreal — it surfaces thoughts I forgot I even had.' },
+   126→  { name: 'Priya M.', text: 'I use this for every meeting, idea, and insight. It never lets me down.' },
+   127→  { name: 'David R.', text: 'Elegant, fast, and actually useful. This is what note-taking should be.' },
+   128→  { name: 'Elena T.', text: 'My students and I rely on Aether for literature synthesis. Game changer.' },
+   129→]
+   130→
+   131→// ═══════════════════════════════════════════════════════════════════════
+   132→// ─── INTERACTIVE DEMO COMPONENT ──────────────────────────────────
+   133→// ═══════════════════════════════════════════════════════════════════════
+   134→
+   135→function InteractiveDemo() {
+   136→  const [typingIndex, setTypingIndex] = useState(0)
+   137→  const [phase, setPhase] = useState<'typing' | 'morphing' | 'reveal' | 'idle'>('idle')
+   138→  const [hasStarted, setHasStarted] = useState(false)
+   139→  const containerRef = useRef<HTMLDivElement>(null)
+   140→
+   141→  const startDemo = useCallback(() => {
+   142→    if (hasStarted) return
+   143→    setHasStarted(true)
+   144→    setPhase('typing')
+   145→    setTypingIndex(0)
+   146→  }, [hasStarted])
+   147→
+   148→  // Auto-start when scrolled into view
+   149→  useEffect(() => {
+   150→    if (hasStarted) return
+   151→    const observer = new IntersectionObserver(
+   152→      (entries) => {
+   153→        if (entries[0].isIntersecting) {
+   154→          startDemo()
+   155→        }
+   156→      },
+   157→      { threshold: 0.5 }
+   158→    )
+   159→    if (containerRef.current) observer.observe(containerRef.current)
+   160→    return () => observer.disconnect()
+   161→  }, [hasStarted, startDemo])
+   162→
+   163→  // Typing effect
+   164→  useEffect(() => {
+   165→    if (phase !== 'typing') return
+   166→    if (typingIndex >= TYPING_TEXT.length) {
+   167→      const timer = setTimeout(() => setPhase('morphing'), 600)
+   168→      return () => clearTimeout(timer)
+   169→    }
+   170→    const speed = 28 + Math.random() * 20
+   171→    const timer = setTimeout(() => setTypingIndex((i) => i + 1), speed)
+   172→    return () => clearTimeout(timer)
+   173→  }, [phase, typingIndex])
+   174→
+   175→  // Morphing phase
+   176→  useEffect(() => {
+   177→    if (phase !== 'morphing') return
+   178→    const timer = setTimeout(() => setPhase('reveal'), 500)
+   179→    return () => clearTimeout(timer)
+   180→  }, [phase])
+   181→
+   182→  // Reveal phase — reset after 5 seconds
+   183→  useEffect(() => {
+   184→    if (phase !== 'reveal') return
+   185→    const timer = setTimeout(() => {
+   186→      setPhase('idle')
+   187→      setHasStarted(false)
+   188→      setTypingIndex(0)
+   189→    }, 6000)
+   190→    return () => clearTimeout(timer)
+   191→  }, [phase])
+   192→
+   193→  return (
+   194→    <div ref={containerRef} className="relative w-full max-w-2xl mx-auto">
+   195→      {/* ── Desktop Device Frame ──────────────────────────────────── */}
+   196→      <motion.div
+   197→        variants={scaleIn}
+   198→        initial="hidden"
+   199→        whileInView="visible"
+   200→        viewport={{ once: true, margin: '-100px' }}
+   201→        className="relative rounded-2xl border border-black/[0.06] bg-white shadow-2xl overflow-hidden"
+   202→      >
+   203→        {/* Browser chrome */}
+   204→        <div className="flex items-center gap-2 px-4 py-3 border-b border-black/[0.04] bg-gray-50/80">
+   205→          <div className="flex gap-1.5">
+   206→            <div className="size-2.5 rounded-full bg-red-400/70" />
+   207→            <div className="size-2.5 rounded-full bg-amber-400/70" />
+   208→            <div className="size-2.5 rounded-full bg-green-400/70" />
+   209→          </div>
+   210→          <div className="flex-1 mx-4">
+   211→            <div className="bg-white rounded-md px-3 py-1 text-[11px] text-gray-400 border border-black/[0.04] text-center font-mono">
+   212→              aether.app
+   213→            </div>
+   214→          </div>
+   215→          <div className="w-12" />
+   216→        </div>
+   217→
+   218→        {/* App content area */}
+   219→        <div className="p-6 min-h-[220px] flex flex-col justify-end relative">
+   220→          {/* Breathing gradient aura behind input */}
+   221→          <div className="absolute inset-0 flex items-end justify-center pb-16 pointer-events-none">
+   222→            <div
+   223→              className="w-[80%] h-32 rounded-full opacity-40 animate-ambient-drift"
+   224→              style={{
+   225→                background:
+   226→                  'radial-gradient(ellipse, rgba(139,92,246,0.25) 0%, rgba(168,85,247,0.10) 40%, transparent 70%)',
+   227→              }}
+   228→            />
+   229→          </div>
+   230→
+   231→          {/* ── Input Phase (typing + idle) ────────────────────────── */}
+   232→          <AnimatePresence mode="wait">
+   233→            {(phase === 'idle' || phase === 'typing') && (
+   234→              <motion.div
+   235→                key="input"
+   236→                initial={{ opacity: 0, y: 8 }}
+   237→                animate={{ opacity: 1, y: 0 }}
+   238→                exit={{ opacity: 0, y: 4, scaleY: 0.96, transition: { duration: 0.2, ease: 'easeInOut' } }}
+   239→                className="relative z-10"
+   240→              >
+   241→                <div className="bg-white/90 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2">
+   242→                  <div className="flex items-center gap-1.5">
+   243→                    <div className="size-8 rounded-xl flex items-center justify-center text-gray-300">
+   244→                      <Mic className="size-4" />
+   245→                    </div>
+   246→                    <div className="flex-1 text-sm text-gray-800 min-h-[28px] flex items-center">
+   247→                      {phase === 'typing' ? (
+   248→                        <span>
+   249→                          {TYPING_TEXT.slice(0, typingIndex)}
+   250→                          <span className="inline-block w-[2px] h-4 bg-purple-500 animate-pulse ml-0.5 align-middle" />
+   251→                        </span>
+   252→                      ) : (
+   253→                        <span className="text-gray-300">Capture a thought...</span>
+   254→                      )}
+   255→                    </div>
+   256→                    <div className="size-8 rounded-xl flex items-center justify-center bg-gray-100 text-gray-400">
+   257→                      <Send className="size-3.5" />
+   258→                    </div>
+   259→                  </div>
+   260→                </div>
+   261→              </motion.div>
+   262→            )}
+   263→          </AnimatePresence>
+   264→
+   265→          {/* ── Morphing Phase ──────────────────────────────────── */}
+   266→          <AnimatePresence mode="wait">
+   267→            {(phase === 'morphing' || phase === 'reveal') && (
+   268→              <motion.div
+   269→                key="card"
+   270→                initial={{ opacity: 0, y: -4, height: 44 }}
+   271→                animate={{
+   272→                  opacity: 1,
+   273→                  y: 0,
+   274→                  height: 'auto',
+   275→                  transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] },
+   276→                }}
+   277→                className="relative z-10"
+   278→              >
+   279→                <div className="bg-white border border-black/[0.04] rounded-2xl p-4 shadow-sm">
+   280→                  <div className="flex items-center gap-2 mb-2">
+   281→                    <div className="size-5 rounded-lg bg-purple-50 flex items-center justify-center">
+   282→                      <Brain className="size-3 text-purple-500" />
+   283→                    </div>
+   284→                    <span className="text-[11px] font-medium text-purple-500 tracking-wide uppercase">
+   285→                      Cognitive Synthesis
+   286→                    </span>
+   287→                  </div>
+   288→                  <AnimatePresence>
+   289→                    {phase === 'reveal' && (
+   290→                      <motion.p
+   291→                        initial={{ opacity: 0 }}
+   292→                        animate={{ opacity: 1 }}
+   293→                        transition={{ duration: 0.6, delay: 0.1 }}
+   294→                        className="text-sm text-gray-700 leading-relaxed"
+   295→                      >
+   296→                        {AI_SYNTHESIS}
+   297→                      </motion.p>
+   298→                    )}
+   299→                  </AnimatePresence>
+   300→                  {phase === 'morphing' && (
+   301→                    <div className="h-4 w-3/4 bg-gray-100 rounded animate-pulse" />
+   302→                  )}
+   303→                  <AnimatePresence>
+   304→                    {phase === 'reveal' && (
+   305→                      <motion.div
+   306→                        initial={{ opacity: 0 }}
+   307→                        animate={{ opacity: 1 }}
+   308→                        transition={{ delay: 0.4, duration: 0.4 }}
+   309→                        className="flex gap-1.5 mt-2.5"
+   310→                      >
+   311→                        {['hardware', 'design', 'pc-build'].map((tag) => (
+   312→                          <span
+   313→                            key={tag}
+   314→                            className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-500 font-medium"
+   315→                          >
+   316→                            {tag}
+   317→                          </span>
+   318→                        ))}
+   319→                      </motion.div>
+   320→                    )}
+   321→                  </AnimatePresence>
+   322→                </div>
+   323→              </motion.div>
+   324→            )}
+   325→          </AnimatePresence>
+   326→        </div>
+   327→      </motion.div>
+   328→    </div>
+   329→  )
+   330→}
+   331→
+   332→// ═══════════════════════════════════════════════════════════════════════
+   333→// ─── ANIMATED GRADIENT BORDER COMPONENT ──────────────────────────
+   334→// ═══════════════════════════════════════════════════════════════════════
+   335→
+   336→function GradientBorderWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
+   337→  return (
+   338→    <div className={cn('relative rounded-3xl p-[2px] overflow-hidden', className)}>
+   339→      {/* Animated gradient border */}
+   340→      <div
+   341→        className="absolute inset-0 animate-gradient-border"
+   342→        style={{
+   343→          background:
+   344→            'linear-gradient(90deg, #8B5CF6, #6366F1, #3B82F6, #8B5CF6)',
+   345→          backgroundSize: '300% 100%',
+   346→        }}
+   347→      />
+   348→      {/* Inner content */}
+   349→      <div className="relative rounded-[calc(1.5rem-2px)] bg-white h-full">
+   350→        {children}
+   351→      </div>
+   352→    </div>
+   353→  )
+   354→}
+   355→
+   356→// ═══════════════════════════════════════════════════════════════════════
+   357→// ─── MAIN DESKTOP LANDING COMPONENT ──────────────────────────────
+   358→// ═══════════════════════════════════════════════════════════════════════
+   359→
+   360→export function DesktopLanding() {
+   361→  const { login, signup } = useAetherStore()
+   362→  const [mode, setMode] = useState<'login' | 'signup'>('login')
+   363→  const [email, setEmail] = useState('')
+   364→  const [password, setPassword] = useState('')
+   365→  const [name, setName] = useState('')
+   366→  const [isLoading, setIsLoading] = useState(false)
+   367→  const [hoveredPremium, setHoveredPremium] = useState(false)
+   368→
+   369→  const handleSubmit = async (e: React.FormEvent) => {
+   370→    e.preventDefault()
+   371→    if (!email.trim() || !password.trim()) {
+   372→      toast.error('Please fill in email and password')
+   373→      return
+   374→    }
+   375→    if (mode === 'signup' && password.length < 6) {
+   376→      toast.error('Password must be at least 6 characters')
+   377→      return
+   378→    }
+   379→
+   380→    setIsLoading(true)
+   381→    try {
+   382→      const success = mode === 'login'
+   383→        ? await login(email.trim(), password)
+   384→        : await signup(email.trim(), password, name.trim())
+   385→
+   386→      if (!success) {
+   387→        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed')
+   388→      }
+   389→    } catch {
+   390→      toast.error('Something went wrong')
+   391→    } finally {
+   392→      setIsLoading(false)
+   393→    }
+   394→  }
+   395→
+   396→  return (
+   397→    <div className="relative min-h-screen overflow-x-hidden bg-[#FAFAFA] flex flex-col">
+   398→
+   399→      {/* ════════════════════════════════════════════════════════════════ */}
+   400→      {/* ── SECTION 1: THE PURPOSE HERO ────────────────────────────── */}
+   401→      {/* ════════════════════════════════════════════════════════════════ */}
+   402→      <section className="relative pt-28 pb-20 px-6 flex flex-col items-center">
+   403→        {/* Ambient gradient blobs */}
+   404→        <div
+   405→          className="pointer-events-none absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full opacity-30 animate-ambient-drift"
+   406→          style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.12) 0%, transparent 70%)' }}
+   407→        />
+   408→        <div
+   409→          className="pointer-events-none absolute -bottom-32 -right-32 w-[500px] h-[500px] rounded-full opacity-25 animate-ambient-drift-alt"
+   410→          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 70%)' }}
+   411→        />
+   412→
+   413→        {/* Atmospheric Typography */}
+   414→        <motion.h1
+   415→          custom={0}
+   416→          initial="hidden"
+   417→          animate="visible"
+   418→          variants={fadeUp}
+   419→          className="text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-zinc-900 text-center max-w-4xl leading-[1.1]"
+   420→        >
+   421→          A sanctuary for thoughts
+   422→          <br />
+   423→          <span className="bg-gradient-to-r from-purple-600 via-violet-500 to-indigo-500 bg-clip-text text-transparent">
+   424→            that move too fast.
+   425→          </span>
+   426→        </motion.h1>
+   427→
+   428→        <motion.p
+   429→          custom={1}
+   430→          initial="hidden"
+   431→          animate="visible"
+   432→          variants={fadeUp}
+   433→          className="mt-6 text-base lg:text-lg text-zinc-400 text-center max-w-xl leading-relaxed"
+   434→        >
+   435→          Built for developers, builders, and creative minds who need zero-friction mental clarity.
+   436→        </motion.p>
+   437→
+   438→        {/* ── Purpose Cards ──────────────────────────────────────────── */}
+   439→        <motion.div
+   440→          variants={staggerContainer}
+   441→          initial="hidden"
+   442→          animate="visible"
+   443→          className="mt-16 grid grid-cols-1 lg:grid-cols-3 gap-5 max-w-5xl w-full"
+   444→        >
+   445→          {purposeCards.map((card) => {
+   446→            const Icon = card.icon
+   447→            return (
+   448→              <motion.div
+   449→                key={card.title}
+   450→                variants={staggerChild}
+   451→                className={cn(
+   452→                  'group relative rounded-2xl p-6',
+   453→                  'bg-white/60 backdrop-blur-xl border border-white/40',
+   454→                  'shadow-[0_1px_3px_rgba(0,0,0,0.02)]',
+   455→                  'hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:bg-white/80',
+   456→                  'transition-all duration-500'
+   457→                )}
+   458→              >
+   459→                {/* Subtle gradient overlay on hover */}
+   460→                <div
+   461→                  className={cn(
+   462→                    'absolute inset-0 rounded-2xl bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500',
+   463→                    card.gradient
+   464→                  )}
+   465→                />
+   466→                <div className="relative z-10">
+   467→                  <div className={cn('mb-4', card.iconColor)}>
+   468→                    <Icon className="size-6" />
+   469→                  </div>
+   470→                  <h3 className="text-base font-semibold text-zinc-900 mb-2">{card.title}</h3>
+   471→                  <p className="text-sm text-zinc-500 leading-relaxed">{card.description}</p>
+   472→                </div>
+   473→              </motion.div>
+   474→            )
+   475→          })}
+   476→        </motion.div>
+   477→      </section>
+   478→
+   479→      {/* ════════════════════════════════════════════════════════════════ */}
+   480→      {/* ── SECTION 2: THE INTERACTIVE LIVING DEMO ────────────────── */}
+   481→      {/* ════════════════════════════════════════════════════════════════ */}
+   482→      <section className="relative py-24 px-6 flex flex-col items-center bg-gradient-to-b from-[#FAFAFA] via-white to-[#FAFAFA]">
+   483→        {/* Section label */}
+   484→        <motion.div
+   485→          custom={0}
+   486→          initial="hidden"
+   487→          whileInView="visible"
+   488→          viewport={{ once: true, margin: '-100px' }}
+   489→          variants={fadeUp}
+   490→          className="flex items-center gap-2 mb-4"
+   491→        >
+   492→          <Sparkles className="size-4 text-purple-500" />
+   493→          <span className="text-xs font-semibold tracking-widest uppercase text-purple-500">
+   494→            Live Experience
+   495→          </span>
+   496→        </motion.div>
+   497→
+   498→        <motion.h2
+   499→          custom={1}
+   500→          initial="hidden"
+   501→          whileInView="visible"
+   502→          viewport={{ once: true, margin: '-100px' }}
+   503→          variants={fadeUp}
+   504→          className="text-3xl lg:text-4xl font-semibold tracking-tight text-zinc-900 text-center max-w-2xl"
+   505→        >
+   506→          Watch your thoughts crystallize
+   507→        </motion.h2>
+   508→
+   509→        <motion.p
+   510→          custom={2}
+   511→          initial="hidden"
+   512→          whileInView="visible"
+   513→          viewport={{ once: true, margin: '-100px' }}
+   514→          variants={fadeUp}
+   515→          className="mt-4 text-sm text-zinc-400 text-center max-w-md"
+   516→        >
+   517→          From raw idea to structured insight — in the time it takes to blink.
+   518→        </motion.p>
+   519→
+   520→        {/* Interactive Demo Component */}
+   521→        <motion.div
+   522→          custom={3}
+   523→          initial="hidden"
+   524→          whileInView="visible"
+   525→          viewport={{ once: true, margin: '-100px' }}
+   526→          variants={fadeUp}
+   527→          className="mt-14 w-full max-w-2xl"
+   528→        >
+   529→          <InteractiveDemo />
+   530→        </motion.div>
+   531→      </section>
+   532→
+   533→      {/* ════════════════════════════════════════════════════════════════ */}
+   534→      {/* ── SECTION 3: THE ASYMMETRIC PRICING MATRIX ──────────────── */}
+   535→      {/* ════════════════════════════════════════════════════════════════ */}
+   536→      <section className="relative py-24 px-6 flex flex-col items-center">
+   537→        {/* Section label */}
+   538→        <motion.div
+   539→          custom={0}
+   540→          initial="hidden"
+   541→          whileInView="visible"
+   542→          viewport={{ once: true, margin: '-100px' }}
+   543→          variants={fadeUp}
+   544→          className="flex items-center gap-2 mb-4"
+   545→        >
+   546→          <CheckCircle2 className="size-4 text-zinc-400" />
+   547→          <span className="text-xs font-semibold tracking-widest uppercase text-zinc-400">
+   548→            Pricing
+   549→          </span>
+   550→        </motion.div>
+   551→
+   552→        <motion.h2
+   553→          custom={1}
+   554→          initial="hidden"
+   555→          whileInView="visible"
+   556→          viewport={{ once: true, margin: '-100px' }}
+   557→          variants={fadeUp}
+   558→          className="text-3xl lg:text-4xl font-semibold tracking-tight text-zinc-900 text-center max-w-xl"
+   559→        >
+   560→          Start free. Scale infinitely.
+   561→        </motion.h2>
+   562→
+   563→        <motion.p
+   564→          custom={2}
+   565→          initial="hidden"
+   566→          whileInView="visible"
+   567→          viewport={{ once: true, margin: '-100px' }}
+   568→          variants={fadeUp}
+   569→          className="mt-4 text-sm text-zinc-400 text-center max-w-md"
+   570→        >
+   571→          No credit card required. Upgrade when your mind outgrows the margins.
+   572→        </motion.p>
+   573→
+   574→        {/* ── Pricing Grid ─────────────────────────────────────────── */}
+   575→        <div className="mt-14 grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl w-full items-start">
+   576→          {/* ── AMBIENT TIER (Free) ──────────────────────────────────── */}
+   577→          <motion.div
+   578→            custom={3}
+   579→            initial="hidden"
+   580→            whileInView="visible"
+   581→            viewport={{ once: true, margin: '-80px' }}
+   582→            variants={fadeUp}
+   583→            className="rounded-3xl bg-white border border-zinc-200/80 p-10 shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+   584→          >
+   585→            <p className="uppercase text-sm font-semibold tracking-wider text-zinc-400 text-center">
+   586→              Ambient Tier
+   587→            </p>
+   588→
+   589→            <div className="mt-5 flex items-baseline justify-center gap-1">
+   590→              <span className="text-5xl font-bold text-zinc-900">$0.00</span>
+   591→            </div>
+   592→            <p className="text-center text-xs text-zinc-400 mt-1">Free forever</p>
+   593→
+   594→            <div className="border-t border-zinc-100 my-6" />
+   595→
+   596→            <ul className="space-y-4">
+   597→              {ambientFeatures.map((feature) => (
+   598→                <li key={feature} className="flex items-center gap-3">
+   599→                  <div className="size-1.5 rounded-full bg-zinc-300 shrink-0" />
+   600→                  <span className="text-sm text-zinc-500">{feature}</span>
+   601→                </li>
+   602→              ))}
+   603→            </ul>
+   604→
+   605→            {/* Inline Auth Form — signup for free tier */}
+   606→            <div className="border-t border-zinc-100 mt-6 pt-6">
+   607→              <form onSubmit={handleSubmit} className="space-y-3.5">
+   608→                {mode === 'signup' && (
+   609→                  <input
+   610→                    type="text"
+   611→                    placeholder="Name"
+   612→                    value={name}
+   613→                    onChange={(e) => setName(e.target.value)}
+   614→                    disabled={isLoading}
+   615→                    className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   616→                  />
+   617→                )}
+   618→                <input
+   619→                  type="email"
+   620→                  placeholder="Email"
+   621→                  value={email}
+   622→                  onChange={(e) => setEmail(e.target.value)}
+   623→                  disabled={isLoading}
+   624→                  autoFocus
+   625→                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   626→                />
+   627→                <input
+   628→                  type="password"
+   629→                  placeholder="Password"
+   630→                  value={password}
+   631→                  onChange={(e) => setPassword(e.target.value)}
+   632→                  disabled={isLoading}
+   633→                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   634→                />
+   635→                <button
+   636→                  type="submit"
+   637→                  disabled={isLoading}
+   638→                  className="w-full flex items-center justify-center gap-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-xl h-10 font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+   639→                >
+   640→                  {isLoading ? (
+   641→                    <Loader2 className="size-4 animate-spin" />
+   642→                  ) : (
+   643→                    mode === 'login' ? 'Sign In' : 'Create Account'
+   644→                  )}
+   645→                </button>
+   646→              </form>
+   647→              <div className="mt-3 text-center">
+   648→                <button
+   649→                  onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+   650→                  className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+   651→                  disabled={isLoading}
+   652→                >
+   653→                  {mode === 'login' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
+   654→                </button>
+   655→              </div>
+   656→            </div>
+   657→          </motion.div>
+   658→
+   659→          {/* ── ASCENT PREMIUM ──────────────────────────────────────── */}
+   660→          <motion.div
+   661→            custom={4}
+   662→            initial="hidden"
+   663→            whileInView="visible"
+   664→            viewport={{ once: true, margin: '-80px' }}
+   665→            variants={fadeUp}
+   666→            onMouseEnter={() => setHoveredPremium(true)}
+   667→            onMouseLeave={() => setHoveredPremium(false)}
+   668→          >
+   669→            <GradientBorderWrapper
+   670→              className={cn(
+   671→                'transition-shadow duration-500',
+   672→                hoveredPremium
+   673→                  ? 'shadow-[0_20px_60px_-15px_rgba(139,92,246,0.3)]'
+   674→                  : 'shadow-[0_8px_30px_-10px_rgba(0,0,0,0.08)]'
+   675→              )}
+   676→            >
+   677→              <div className="p-10">
+   678→                <p className="uppercase text-sm font-semibold tracking-wider text-purple-600 text-center">
+   679→                  Ascent Premium
+   680→                </p>
+   681→
+   682→                <div className="mt-5 flex items-baseline justify-center gap-1.5">
+   683→                  <span className="text-5xl font-bold text-zinc-900">$5.99</span>
+   684→                  <span className="text-base font-medium text-zinc-400">/ month</span>
+   685→                </div>
+   686→
+   687→                <div className="border-t border-black/[0.04] my-6" />
+   688→
+   689→                <ul className="space-y-4">
+   690→                  {ascentFeatures.map((feature) => (
+   691→                    <li key={feature} className="flex items-center gap-3">
+   692→                      <Sparkles className="size-4 text-purple-500 shrink-0" />
+   693→                      <span className="text-sm text-zinc-600">{feature}</span>
+   694→                    </li>
+   695→                  ))}
+   696→                </ul>
+   697→
+   698→                {/* Conversion CTA */}
+   699→                <motion.button
+   700→                  whileHover={{ scale: 1.02 }}
+   701→                  whileTap={{ scale: 0.98 }}
+   702→                  className="mt-8 w-full bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl py-3.5 font-medium text-sm transition-colors duration-200 flex items-center justify-center gap-2"
+   703→                >
+   704→                  Upgrade to Ascent
+   705→                  <ArrowRight className="size-4" />
+   706→                </motion.button>
+   707→              </div>
+   708→            </GradientBorderWrapper>
+   709→          </motion.div>
+   710→        </div>
+   711→      </section>
+   712→
+   713→      {/* ════════════════════════════════════════════════════════════════ */}
+   714→      {/* ── TESTIMONIAL TICKER ─────────────────────────────────────── */}
+   715→      {/* ════════════════════════════════════════════════════════════════ */}
+   716→      <section className="py-16 w-full overflow-hidden border-t border-black/[0.03]">
+   717→        <motion.div
+   718→          custom={0}
+   719→          initial="hidden"
+   720→          whileInView="visible"
+   721→          viewport={{ once: true }}
+   722→          variants={fadeUp}
+   723→          className="w-full"
+   724→        >
+   725→          <div className="animate-ticker flex gap-8 w-max">
+   726→            {[...testimonials, ...testimonials].map((t, i) => (
+   727→              <div
+   728→                key={`${t.name}-${i}`}
+   729→                className="w-72 shrink-0 rounded-2xl bg-white/70 border border-black/[0.04] backdrop-blur-sm p-5"
+   730→              >
+   731→                <div className="flex gap-0.5 mb-3">
+   732→                  {Array.from({ length: 5 }).map((_, si) => (
+   733→                    <Star key={si} className="size-3.5 fill-amber-400 text-amber-400" />
+   734→                  ))}
+   735→                </div>
+   736→                <p className="text-sm text-zinc-600 leading-relaxed">
+   737→                  &ldquo;{t.text}&rdquo;
+   738→                </p>
+   739→                <p className="mt-2 text-xs text-zinc-400 font-medium">{t.name}</p>
+   740→              </div>
+   741→            ))}
+   742→          </div>
+   743→        </motion.div>
+   744→      </section>
+   745→
+   746→      {/* ════════════════════════════════════════════════════════════════ */}
+   747→      {/* ── FOOTER ─────────────────────────────────────────────────── */}
+   748→      {/* ════════════════════════════════════════════════════════════════ */}
+   749→      <footer className="mt-auto py-8 text-center border-t border-black/[0.03]">
+   750→        <div className="flex items-center justify-center gap-2 text-zinc-400">
+   751→          <Brain className="size-4" />
+   752→          <span className="text-sm font-medium">Aether</span>
+   753→        </div>
+   754→        <p className="mt-2 text-xs text-zinc-300">
+   755→          Your mind, entirely unified.
+   756→        </p>
+   757→      </footer>
+   758→    </div>
+   759→  )
+   760→}
+   761→
