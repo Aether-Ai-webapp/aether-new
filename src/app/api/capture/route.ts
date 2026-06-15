@@ -12,7 +12,9 @@ async function getPrisma() {
   return db
 }
 
-// ─── Keyword-based auto-tagging (free, instant, no API) ────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── KEYWORD-BASED AUTO-TAGGING (free, instant, always runs) ────────
+// ═══════════════════════════════════════════════════════════════════════
 function autoGenerateTags(content: string, title: string): string[] {
   const text = `${title} ${content}`.toLowerCase()
   const tagMap: Record<string, string[]> = {
@@ -42,17 +44,20 @@ function autoGenerateTags(content: string, title: string): string[] {
   return tags.slice(0, 5)
 }
 
-// ─── Transcribe audio via z-ai-web-dev-sdk ASR ─────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── AUDIO TRANSCRIPTION — z-ai-web-dev-sdk ASR → Groq Whisper ────
+// ═══════════════════════════════════════════════════════════════════════
 async function transcribeAudio(audioFile: File): Promise<string> {
+  // TIER 1: z-ai-web-dev-sdk ASR
   try {
     const { createTranscription } = await import('@/lib/aether-asr')
     const transcript = await createTranscription(audioFile)
     if (transcript?.trim()) return transcript.trim()
   } catch (err) {
-    console.error('[capture] ASR transcription failed:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] z-ai ASR failed:', err instanceof Error ? err.message : 'Unknown')
   }
 
-  // Fallback: try Groq Whisper via REST API
+  // TIER 2: Groq Whisper via REST API
   try {
     const groqKey = process.env.NEXT_PUBLIC_GROQ_API_KEY
     if (!groqKey || groqKey === 'placeholder_groq_key') return ''
@@ -75,13 +80,15 @@ async function transcribeAudio(audioFile: File): Promise<string> {
       if (data.text?.trim()) return data.text.trim()
     }
   } catch (err) {
-    console.error('[capture] Groq Whisper fallback failed:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] Groq Whisper fallback failed:', err instanceof Error ? err.message : 'Unknown')
   }
 
   return ''
 }
 
-// ─── Upload image to Supabase storage ──────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── IMAGE UPLOAD TO SUPABASE STORAGE ───────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
 async function uploadImageToStorage(imageFile: File, userId: string): Promise<string | null> {
   try {
     const supabase = await getSupabaseServer()
@@ -108,14 +115,16 @@ async function uploadImageToStorage(imageFile: File, userId: string): Promise<st
     const { data: urlData } = supabase.storage.from('memories').getPublicUrl(filePath)
     return urlData?.publicUrl || null
   } catch (err) {
-    console.error('[capture] Image upload failed:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] Image upload failed:', err instanceof Error ? err.message : 'Unknown')
     return null
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── COGNITIVE SYNTHESIS ENGINE — Gemini 1.5 Flash ───────────────────
-// Upgraded: produces summary + deep_insight + tags in one call
+// ─── COGNITIVE SYNTHESIS ENGINE — 3-TIER AI PIPELINE ────────────────
+// Tier 1: z-ai-web-dev-sdk (always available, no API key needed)
+// Tier 2: Gemini 1.5 Flash (if API key configured)
+// Tier 3: Keyword-based fallback (always available)
 // ═══════════════════════════════════════════════════════════════════════
 interface CognitiveResult {
   summary: string
@@ -139,72 +148,98 @@ async function generateCognitiveSynthesis(rawText: string): Promise<CognitiveRes
   const empty: CognitiveResult = { summary: '', deepInsight: '', tags: [] }
   if (!rawText.trim()) return empty
 
+  // ── TIER 1: z-ai-web-dev-sdk (primary, no API key needed) ──────────
   try {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
-    if (!apiKey) return empty
+    const ZAI = (await import('z-ai-web-dev-sdk')).default
+    const zai = await ZAI.create()
 
-    const synthesisPromise = (async (): Promise<CognitiveResult> => {
-      const { GoogleGenerativeAI } = await import('@google/generative-ai')
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-
-      const result = await model.generateContent({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${COGNITIVE_SYSTEM_PROMPT}\n\nRaw input:\n${rawText.slice(0, 2000)}` }],
-          },
-        ],
-        generationConfig: { temperature: 0.5, maxOutputTokens: 500 },
-      })
-
-      const responseText = result.response.text().trim()
-
-      // Extract JSON from response (handle markdown code blocks)
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0])
-          return {
-            summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
-            deepInsight: typeof parsed.deep_insight === 'string' ? parsed.deep_insight.trim() : '',
-            tags: Array.isArray(parsed.tags)
-              ? parsed.tags.filter((t: unknown) => typeof t === 'string').map((t: string) => t.toLowerCase().trim()).filter(Boolean).slice(0, 5)
-              : [],
-          }
-        } catch {
-          // JSON parse failed
-        }
-      }
-
-      // Fallback: try to extract individual fields
-      const summaryMatch = responseText.match(/"summary"\s*:\s*"([^"]*)"/)
-      const insightMatch = responseText.match(/"deep_insight"\s*:\s*"([^"]*)"/)
-
-      return {
-        summary: summaryMatch?.[1]?.trim() || '',
-        deepInsight: insightMatch?.[1]?.trim() || '',
-        tags: [],
-      }
-    })()
-
-    const timeoutPromise = new Promise<CognitiveResult>((resolve) => {
-      setTimeout(() => resolve(empty), 8000)
+    const completion = await zai.chat.completions.create({
+      messages: [
+        { role: 'assistant', content: COGNITIVE_SYSTEM_PROMPT },
+        { role: 'user', content: `Raw input:\n${rawText.slice(0, 2000)}` },
+      ],
+      thinking: { type: 'disabled' },
     })
 
-    return await Promise.race([synthesisPromise, timeoutPromise])
+    const responseText = completion.choices[0]?.message?.content?.trim() || ''
+
+    const parsed = parseCognitiveJSON(responseText)
+    if (parsed.summary || parsed.deepInsight || parsed.tags.length > 0) {
+      console.log('[capture] Cognitive synthesis: z-ai-web-dev-sdk (Tier 1) succeeded')
+      return parsed
+    }
   } catch (err) {
-    console.error('[capture] Cognitive synthesis failed:', err instanceof Error ? err.message : 'Unknown error')
-    return empty
+    console.error('[capture] z-ai synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+  }
+
+  // ── TIER 2: Gemini 1.5 Flash (if API key available) ───────────────
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+    if (!apiKey) throw new Error('No Gemini key')
+
+    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: `${COGNITIVE_SYSTEM_PROMPT}\n\nRaw input:\n${rawText.slice(0, 2000)}` }],
+        },
+      ],
+      generationConfig: { temperature: 0.5, maxOutputTokens: 500 },
+    })
+
+    const responseText = result.response.text().trim()
+    const parsed = parseCognitiveJSON(responseText)
+    if (parsed.summary || parsed.deepInsight || parsed.tags.length > 0) {
+      console.log('[capture] Cognitive synthesis: Gemini Flash (Tier 2) succeeded')
+      return parsed
+    }
+  } catch (err) {
+    console.error('[capture] Gemini synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+  }
+
+  // ── TIER 3: Keyword fallback (always works) ───────────────────────
+  console.log('[capture] All AI tiers failed — using keyword fallback')
+  return empty
+}
+
+function parseCognitiveJSON(responseText: string): CognitiveResult {
+  // Extract JSON from response (handle markdown code blocks)
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0])
+      return {
+        summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+        deepInsight: typeof parsed.deep_insight === 'string' ? parsed.deep_insight.trim() : '',
+        tags: Array.isArray(parsed.tags)
+          ? parsed.tags.filter((t: unknown) => typeof t === 'string').map((t: string) => t.toLowerCase().trim()).filter(Boolean).slice(0, 5)
+          : [],
+      }
+    } catch {
+      // JSON parse failed
+    }
+  }
+
+  // Fallback: try to extract individual fields
+  const summaryMatch = responseText.match(/"summary"\s*:\s*"([^"]*)"/)
+  const insightMatch = responseText.match(/"deep_insight"\s*:\s*"([^"]*)"/)
+
+  return {
+    summary: summaryMatch?.[1]?.trim() || '',
+    deepInsight: insightMatch?.[1]?.trim() || '',
+    tags: [],
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
 // ─── AUTONOMOUS COLLECTIONS ENGINE ─────────────────────────────────
-// Two rules:
-// 1. MANUAL MATCH: If a new memory's tags match an existing collection name,
-//    auto-assign the memory to that collection.
-// 2. AUTO-10 RULE: If 10+ uncollected memories share similar tags,
-//    automatically create a new collection and sweep them in.
+// Rule 1: If a new memory's tags match an existing collection, auto-assign
+// Rule 2: If 10+ uncollected memories share a tag, auto-create collection
+// ═══════════════════════════════════════════════════════════════════════
 
 async function runAutonomousCollections(
   memoryId: string,
@@ -212,27 +247,20 @@ async function runAutonomousCollections(
   baseUrl: string
 ): Promise<void> {
   try {
-    // Rule 1: Match against existing collections
     await matchToExistingCollections(memoryId, memoryTags)
-
-    // Rule 2: Check for tag clusters that hit the 10-memory threshold
     await checkAutoCollectionRule(baseUrl)
   } catch (err) {
-    console.error('[capture] Autonomous collections error:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] Autonomous collections error:', err instanceof Error ? err.message : 'Unknown')
   }
 }
 
 async function matchToExistingCollections(memoryId: string, memoryTags: string[]): Promise<void> {
   try {
     const db = await getPrisma()
-
-    // Get all collections
     const collections = await db.collection.findMany()
 
     for (const collection of collections) {
       const collNameLower = collection.name.toLowerCase()
-
-      // Check if any memory tag matches or relates to the collection name
       const tagMatches = memoryTags.some(
         (tag) =>
           collNameLower.includes(tag) ||
@@ -241,20 +269,13 @@ async function matchToExistingCollections(memoryId: string, memoryTags: string[]
       )
 
       if (tagMatches) {
-        // Check if the junction already exists
         const existing = await db.memoryCollection.findFirst({
-          where: {
-            memoryId,
-            collectionId: collection.id,
-          },
+          where: { memoryId, collectionId: collection.id },
         })
 
         if (!existing) {
           await db.memoryCollection.create({
-            data: {
-              memoryId,
-              collectionId: collection.id,
-            },
+            data: { memoryId, collectionId: collection.id },
           })
         }
       }
@@ -292,7 +313,7 @@ async function matchToExistingCollections(memoryId: string, memoryTags: string[]
       // Supabase path optional
     }
   } catch (err) {
-    console.error('[capture] Collection matching error:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] Collection matching error:', err instanceof Error ? err.message : 'Unknown')
   }
 }
 
@@ -300,7 +321,6 @@ async function checkAutoCollectionRule(baseUrl: string): Promise<void> {
   try {
     const db = await getPrisma()
 
-    // Find memories that have NO collection assignments
     const uncollectedMemories = await db.memory.findMany({
       where: {
         collections: { none: {} },
@@ -312,7 +332,7 @@ async function checkAutoCollectionRule(baseUrl: string): Promise<void> {
     if (uncollectedMemories.length < 10) return
 
     // Build tag frequency map
-    const tagFrequency: Record<string, string[]> = {} // tag -> array of memory IDs
+    const tagFrequency: Record<string, string[]> = {}
     for (const mem of uncollectedMemories) {
       const memTags = mem.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean)
       for (const tag of memTags) {
@@ -327,13 +347,11 @@ async function checkAutoCollectionRule(baseUrl: string): Promise<void> {
 
     for (const [tag, memoryIds] of Object.entries(tagFrequency)) {
       if (memoryIds.length >= 10) {
-        // Check if a collection for this tag already exists
         const existingCollection = await db.collection.findFirst({
           where: { name: { equals: tag.charAt(0).toUpperCase() + tag.slice(1), mode: 'insensitive' } },
         })
 
         if (!existingCollection) {
-          // Create a new collection with an intelligent name
           const collectionName = tag.charAt(0).toUpperCase() + tag.slice(1)
           const color = clusterColors[colorIdx % clusterColors.length]
           colorIdx++
@@ -346,7 +364,6 @@ async function checkAutoCollectionRule(baseUrl: string): Promise<void> {
             },
           })
 
-          // Assign the clustered memories to this new collection
           for (const memId of memoryIds) {
             await db.memoryCollection.upsert({
               where: {
@@ -394,7 +411,7 @@ async function checkAutoCollectionRule(baseUrl: string): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[capture] Auto-collection rule error:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('[capture] Auto-collection rule error:', err instanceof Error ? err.message : 'Unknown')
   }
 }
 
@@ -464,7 +481,6 @@ function buildMemoryResponse(
 export async function POST(req: NextRequest) {
   try {
     // ── STEP 1: UNIVERSAL PAYLOAD SCANNER ─────────────────────────────
-    // Parse the incoming FormData and classify each field by type.
     const formData = await req.formData()
 
     const textInput = (formData.get('text') as string) || ''
@@ -475,7 +491,6 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = new URL(req.url).origin
 
-    // Classify: is it text? a link? an audio blob? an image file?
     const hasText = textInput.trim().length > 0
     const hasUrl = urlInput.trim().length > 0
     const hasAudio = audioFile !== null && audioFile.size > 0
@@ -488,7 +503,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── STEP 2: Determine the user (Supabase session or local) ─────
+    // ── STEP 2: Determine user (Supabase session or local) ─────────
     let supabaseSession: { user: { id: string } } | null = null
     let useSupabase = false
 
@@ -505,7 +520,7 @@ export async function POST(req: NextRequest) {
         useSupabase = !tableCheck
       }
     } catch {
-      // No Supabase session
+      // No Supabase session — fall back to Prisma
     }
 
     // ── STEP 3: DYNAMIC INPUT DISPATCHING ────────────────────────────
@@ -535,7 +550,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3c: Determine the content type
+    // 3c: Determine content type
     let memoryType = 'text'
     if (typeOverride && ['text', 'voice', 'link', 'image'].includes(typeOverride)) {
       memoryType = typeOverride
@@ -565,30 +580,35 @@ export async function POST(req: NextRequest) {
     }
 
     // Compose the title
-    let title = ''
-    if (rawContent.length > 80) {
-      title = rawContent.slice(0, 80) + '...'
-    } else {
-      title = rawContent
-    }
+    let title = rawContent.length > 80 ? rawContent.slice(0, 80) + '...' : rawContent
     if (hasImage && !textInput.trim()) {
       title = imageFile ? `Image: ${imageFile.name}` : 'Image'
     }
 
-    // ── STEP 4: COGNITIVE SYNTHESIS — Gemini Flash ─────────────────
+    // ── STEP 4: COGNITIVE SYNTHESIS — 3-TIER AI PIPELINE ───────────
     const textForSynthesis = rawContent || (hasUrl ? urlInput : '')
     let cleanedSummary: string | null = null
     let deepInsight: string | null = null
     let aiTags: string[] = []
 
-    // Start with keyword tags (instant, free)
+    // Always run keyword tags first (instant, free, reliable)
     const keywordTags = autoGenerateTags(rawContent, title)
 
+    // Run AI synthesis if we have content (with 8-second timeout)
     if (textForSynthesis.trim()) {
-      const cognitive = await generateCognitiveSynthesis(textForSynthesis)
-      if (cognitive.summary) cleanedSummary = cognitive.summary
-      if (cognitive.deepInsight) deepInsight = cognitive.deepInsight
-      if (cognitive.tags.length > 0) aiTags = cognitive.tags
+      try {
+        const synthesisPromise = generateCognitiveSynthesis(textForSynthesis)
+        const timeoutPromise = new Promise<CognitiveResult>((resolve) =>
+          setTimeout(() => resolve({ summary: '', deepInsight: '', tags: [] }), 8000)
+        )
+
+        const cognitive = await Promise.race([synthesisPromise, timeoutPromise])
+        if (cognitive.summary) cleanedSummary = cognitive.summary
+        if (cognitive.deepInsight) deepInsight = cognitive.deepInsight
+        if (cognitive.tags.length > 0) aiTags = cognitive.tags
+      } catch (err) {
+        console.error('[capture] Synthesis error:', err instanceof Error ? err.message : 'Unknown')
+      }
     }
 
     // Merge: AI tags take priority, keyword tags fill gaps
@@ -596,7 +616,7 @@ export async function POST(req: NextRequest) {
       ? [...new Set([...aiTags, ...keywordTags])].slice(0, 5)
       : keywordTags
 
-    // ── STEP 5: Database ingestion ───────────────────────────────────
+    // ── STEP 5: DATABASE INGESTION ───────────────────────────────────
     let memory: Record<string, unknown>
 
     // 5a: Try Supabase insertion
@@ -637,7 +657,7 @@ export async function POST(req: NextRequest) {
 
         memory = buildMemoryResponse(row, collectionsFromRow)
 
-        // ── Background: embedding + link reading + auto-collections ────
+        // Background: embedding + link reading + auto-collections
         if (rawContent.trim()) {
           fetch(`${baseUrl}/api/generate-embedding`, {
             method: 'POST',
@@ -654,16 +674,15 @@ export async function POST(req: NextRequest) {
           }).catch(() => {})
         }
 
-        // Autonomous collections (fire-and-forget)
         runAutonomousCollections(memory.id as string, finalTags, baseUrl).catch(() => {})
 
         return NextResponse.json({ success: true, memory })
       } catch (err) {
-        console.error('[capture] Supabase insertion failed, falling back to Prisma:', err instanceof Error ? err.message : 'Unknown error')
+        console.error('[capture] Supabase insertion failed, falling back to Prisma:', err instanceof Error ? err.message : 'Unknown')
       }
     }
 
-    // 5b: Fallback — Prisma SQLite insertion
+    // 5b: Fallback — Prisma SQLite insertion (always works)
     try {
       const db = await getPrisma()
 
@@ -715,7 +734,7 @@ export async function POST(req: NextRequest) {
         }))
       )
 
-      // ── Background: embedding + link reading + auto-collections ────
+      // Background: embedding + link reading + auto-collections
       if (rawContent.trim()) {
         fetch(`${baseUrl}/api/generate-embedding`, {
           method: 'POST',
@@ -732,19 +751,18 @@ export async function POST(req: NextRequest) {
         }).catch(() => {})
       }
 
-      // Autonomous collections (fire-and-forget)
       runAutonomousCollections(prismaMemory.id, finalTags, baseUrl).catch(() => {})
 
       return NextResponse.json({ success: true, memory })
     } catch (err) {
-      console.error('[capture] Prisma insertion failed:', err instanceof Error ? err.message : 'Unknown error')
+      console.error('[capture] Prisma insertion failed:', err instanceof Error ? err.message : 'Unknown')
       return NextResponse.json(
         { success: false, error: 'Failed to save memory to database' },
         { status: 500 }
       )
     }
   } catch (error) {
-    console.error('[capture] Unhandled error:', error instanceof Error ? error.message : 'Unknown error')
+    console.error('[capture] Unhandled error:', error instanceof Error ? error.message : 'Unknown')
     return NextResponse.json(
       { success: false, error: 'Internal server error during capture' },
       { status: 500 }
