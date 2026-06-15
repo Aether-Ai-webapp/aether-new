@@ -28,6 +28,9 @@ import {
   Search,
   MessageCircle,
   Volume2,
+  Tag,
+  ExternalLink,
+  Hash,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -127,8 +130,8 @@ function LivingDemo() {
                 </p>
                 <div className="flex gap-2 mt-3">
                   <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">hardware</span>
-                  <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full">video-editing</span>
-                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">budget</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">video-editing</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">budget</span>
                 </div>
               </motion.div>
             )}
@@ -137,6 +140,41 @@ function LivingDemo() {
       </div>
     </div>
   )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ─── MEMORY TYPE ICON HELPER ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+
+function MemoryTypeIcon({ type, className }: { type: MemoryType; className?: string }) {
+  switch (type) {
+    case 'voice':
+      return <Volume2 className={className} />
+    case 'link':
+      return <Link2 className={className} />
+    case 'image':
+      return <ImageIcon className={className} />
+    default:
+      return <FileText className={className} />
+  }
+}
+
+function MemoryTypeBgClass(type: MemoryType): string {
+  switch (type) {
+    case 'voice': return 'bg-red-50 text-red-500'
+    case 'link': return 'bg-blue-50 text-blue-500'
+    case 'image': return 'bg-green-50 text-green-500'
+    default: return 'bg-purple-50 text-purple-500'
+  }
+}
+
+function MemoryTypeBadgeClass(type: MemoryType): string {
+  switch (type) {
+    case 'voice': return 'bg-red-50 text-red-600'
+    case 'link': return 'bg-blue-50 text-blue-600'
+    case 'image': return 'bg-green-50 text-green-600'
+    default: return 'bg-purple-50 text-purple-600'
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -208,22 +246,28 @@ export default function AetherApp() {
   // ─── HANDLERS ────────────────────────────────────────────────────
   // ═════════════════════════════════════════════════════════════════
 
-  const handleCapture = useCallback(async () => {
+  const handleCaptureSubmit = useCallback(async () => {
     const text = captureText.trim()
     if (!text && !selectedImage && !isRecording) return
-
-    // Local users are now authenticated by default — no auth gate needed
 
     setIsCapturing(true)
 
     try {
+      // ── IMAGE CAPTURE PATH ────────────────────────────────────────
       if (selectedImage) {
         const formData = new FormData()
         formData.append('image', selectedImage)
         if (text) formData.append('text', text)
 
-        const res = await fetch('/api/capture', { method: 'POST', body: formData })
-        if (!res.ok) throw new Error('Capture failed')
+        const res = await fetch('/api/capture', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        })
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          throw new Error(errData.error || 'Capture failed')
+        }
         const data = await res.json()
 
         if (data.memory) {
@@ -231,28 +275,43 @@ export default function AetherApp() {
           setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
           toast.success('Image captured!')
         }
-      } else {
-        const isUrl = /^https?:\/\//i.test(text)
-        const memoryType: MemoryType = isUrl ? 'link' : 'text'
-        const result = await store.saveMemory({
-          type: memoryType,
-          title: isUrl ? 'Saved Link' : text.slice(0, 60),
-          content: text,
-          sourceUrl: isUrl ? text : null,
-        })
 
-        if (result) {
-          setNewMemoryIds(prev => new Set([...prev, result.id]))
-          toast.success('Memory captured!')
-        }
+        setCaptureText('')
+        setSelectedImage(null)
+        setImagePreviewUrl(null)
+        return
+      }
+
+      // ── TEXT / LINK CAPTURE PATH ──────────────────────────────────
+      const isUrl = /^https?:\/\//i.test(text)
+      const memoryType: MemoryType = isUrl ? 'link' : 'text'
+
+      // Use the capture API for text too, so Gemini synthesis runs
+      const formData = new FormData()
+      formData.append('text', text)
+      if (isUrl) formData.append('url', text)
+
+      const res = await fetch('/api/capture', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Capture failed')
+      }
+      const data = await res.json()
+
+      if (data.memory) {
+        store.addMemory(data.memory)
+        setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
+        toast.success('Memory captured!')
       }
 
       setCaptureText('')
-      setSelectedImage(null)
-      setImagePreviewUrl(null)
     } catch (err) {
       console.error('Capture error:', err)
-      toast.error('Failed to capture. Please try again.')
+      toast.error(err instanceof Error ? err.message : 'Failed to capture. Please try again.')
     } finally {
       setIsCapturing(false)
     }
@@ -272,16 +331,21 @@ export default function AetherApp() {
         const blob = new Blob(chunks, { type: 'audio/webm' })
         stream.getTracks().forEach(t => t.stop())
 
-        // Local users are now authenticated by default — no auth gate needed
-
         setIsCapturing(true)
         try {
           const formData = new FormData()
           formData.append('audio', blob, 'recording.webm')
           formData.append('text', '')
 
-          const res = await fetch('/api/capture', { method: 'POST', body: formData })
-          if (!res.ok) throw new Error('Voice capture failed')
+          const res = await fetch('/api/capture', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+          })
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}))
+            throw new Error(errData.error || 'Voice capture failed')
+          }
           const data = await res.json()
 
           if (data.memory) {
@@ -291,7 +355,7 @@ export default function AetherApp() {
           }
         } catch (err) {
           console.error('Voice capture error:', err)
-          toast.error('Failed to process voice note')
+          toast.error(err instanceof Error ? err.message : 'Failed to process voice note')
         } finally {
           setIsCapturing(false)
         }
@@ -392,6 +456,7 @@ export default function AetherApp() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: q }),
+        credentials: 'include',
       })
 
       if (!res.ok || !res.body) throw new Error('Chat failed')
@@ -418,6 +483,16 @@ export default function AetherApp() {
     await store.logout()
     toast.success('Signed out')
   }, [store])
+
+  const openDrawer = useCallback((memory: Memory) => {
+    setDrawerMemory(memory)
+    setDrawerOpen(true)
+  }, [])
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false)
+    setDrawerMemory(null)
+  }, [])
 
   // ═════════════════════════════════════════════════════════════════
   // ─── COMPUTED VALUES ─────────────────────────────────────────────
@@ -634,7 +709,7 @@ export default function AetherApp() {
         </section>
 
         {/* Footer */}
-        <footer className="border-t border-zinc-100 py-8 px-6">
+        <footer className="border-t border-zinc-100 py-8 px-6 mt-auto">
           <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-zinc-400">
             <span>&copy; {new Date().getFullYear()} Aether</span>
             <span>Your second brain, always listening.</span>
@@ -730,9 +805,9 @@ export default function AetherApp() {
               )}
             >
               <MessageCircle className="w-3.5 h-3.5" />
-              Ask Your Mind
+              <span className="hidden sm:inline">Ask Your Mind</span>
             </button>
-            {store.isAuthenticated && (
+            {store.user && store.user.id !== 'local' && (
               <button
                 onClick={handleSignOut}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
@@ -740,13 +815,13 @@ export default function AetherApp() {
                 <LogOut className="w-3.5 h-3.5" />
               </button>
             )}
-            {!store.isAuthenticated && (
+            {(!store.user || store.user.id === 'local') && (
               <button
                 onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                Sign In
+                <span className="hidden sm:inline">Sign In</span>
               </button>
             )}
           </div>
@@ -755,10 +830,11 @@ export default function AetherApp() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 pt-6 pb-20">
-        {/* Capture Capsule Bar */}
+        {/* ═══ Capture Capsule Bar ═══ */}
         <div className="relative mb-8">
           <div className="absolute -inset-4 bg-gradient-to-r from-purple-500 to-indigo-500 blur-2xl opacity-15 rounded-3xl pointer-events-none" />
           <div className="relative bg-white rounded-2xl border border-zinc-100 shadow-sm p-3">
+            {/* Image preview strip */}
             {imagePreviewUrl && (
               <div className="mb-3 flex items-center gap-2">
                 <img src={imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-zinc-100" />
@@ -770,6 +846,7 @@ export default function AetherApp() {
                 </button>
               </div>
             )}
+            {/* Capture input row */}
             <div className="flex items-center gap-2">
               <input
                 type="file"
@@ -801,13 +878,13 @@ export default function AetherApp() {
                 type="text"
                 value={captureText}
                 onChange={e => setCaptureText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCapture() } }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCaptureSubmit() } }}
                 placeholder={isRecording ? "Recording..." : "Capture a thought, paste a link, or type a note..."}
                 className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none placeholder:text-zinc-300 text-zinc-800"
                 disabled={isRecording || isCapturing}
               />
               <button
-                onClick={handleCapture}
+                onClick={handleCaptureSubmit}
                 disabled={isCapturing || (!captureText.trim() && !selectedImage && !isRecording)}
                 className={cn(
                   "shrink-0 p-2 rounded-lg transition-all",
@@ -819,6 +896,7 @@ export default function AetherApp() {
                 {isCapturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
+            {/* Recording indicator */}
             {isRecording && (
               <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -828,7 +906,7 @@ export default function AetherApp() {
           </div>
         </div>
 
-        {/* Ask Your Mind Panel */}
+        {/* ═══ Ask Your Mind Panel (Voicenotes-style) ═══ */}
         <AnimatePresence>
           {askAIOpen && (
             <motion.div
@@ -876,7 +954,7 @@ export default function AetherApp() {
           )}
         </AnimatePresence>
 
-        {/* Filter Bar */}
+        {/* ═══ Filter Bar ═══ */}
         <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
           {(['all', 'text', 'voice', 'link', 'image'] as const).map(type => (
             <button
@@ -905,7 +983,7 @@ export default function AetherApp() {
           </div>
         </div>
 
-        {/* Timeline Feed */}
+        {/* ═══ Timeline Feed ═══ */}
         {store.isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
@@ -932,21 +1010,12 @@ export default function AetherApp() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-white rounded-xl border border-zinc-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
-                    onClick={() => { setDrawerMemory(memory); setDrawerOpen(true) }}
+                    onClick={() => openDrawer(memory)}
                   >
                     <div className="p-4">
                       <div className="flex items-start gap-3">
-                        <div className={cn(
-                          "shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
-                          memory.type === 'voice' ? 'bg-red-50 text-red-500' :
-                          memory.type === 'link' ? 'bg-blue-50 text-blue-500' :
-                          memory.type === 'image' ? 'bg-green-50 text-green-500' :
-                          'bg-purple-50 text-purple-500'
-                        )}>
-                          {memory.type === 'voice' ? <Volume2 className="w-4 h-4" /> :
-                           memory.type === 'link' ? <Link2 className="w-4 h-4" /> :
-                           memory.type === 'image' ? <ImageIcon className="w-4 h-4" /> :
-                           <FileText className="w-4 h-4" />}
+                        <div className={cn("shrink-0 w-8 h-8 rounded-lg flex items-center justify-center", MemoryTypeBgClass(memory.type))}>
+                          <MemoryTypeIcon type={memory.type} className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -978,7 +1047,7 @@ export default function AetherApp() {
                     </div>
                   </motion.div>
 
-                  {/* AI Suggestion Box (Saner-style) */}
+                  {/* ═══ Saner-style AI Suggestion Box ═══ */}
                   {isNew && (memory.summary || memory.tags.length > 0) && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
@@ -992,12 +1061,16 @@ export default function AetherApp() {
                           <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">AI Suggestion</span>
                         </div>
                         {memory.title && (
-                          <p className="text-xs font-medium text-zinc-600 mb-1.5">{memory.title}</p>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <FileText className="w-3 h-3 text-zinc-400" />
+                            <p className="text-xs font-medium text-zinc-600">{memory.title}</p>
+                          </div>
                         )}
                         {memory.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mb-2">
                             {memory.tags.map(tag => (
-                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-white text-zinc-500 rounded border border-zinc-100">
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-white text-zinc-500 rounded border border-zinc-100 flex items-center gap-0.5">
+                                <Hash className="w-2 h-2" />
                                 {tag}
                               </span>
                             ))}
@@ -1028,17 +1101,21 @@ export default function AetherApp() {
         </div>
       </footer>
 
-      {/* ─── Inspection Drawer ──────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════
+          ─── INSPECTION DRAWER (Right-side sliding panel) ──────────────
+          ═══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {drawerOpen && drawerMemory && (
           <>
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.3 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 bg-black"
-              onClick={() => { setDrawerOpen(false); setDrawerMemory(null) }}
+              onClick={closeDrawer}
             />
+            {/* Drawer Panel */}
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
@@ -1046,10 +1123,11 @@ export default function AetherApp() {
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
             >
+              {/* Drawer Header */}
               <div className="sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between p-4 border-b border-zinc-100">
                 <h2 className="text-sm font-bold text-zinc-900">Memory Detail</h2>
                 <button
-                  onClick={() => { setDrawerOpen(false); setDrawerMemory(null) }}
+                  onClick={closeDrawer}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-all"
                 >
                   <X className="w-4 h-4" />
@@ -1057,16 +1135,10 @@ export default function AetherApp() {
               </div>
 
               <div className="p-5 space-y-6">
-                {/* Title & Type */}
+                {/* Title & Type Badge */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={cn(
-                      "px-2 py-0.5 text-[10px] font-medium rounded-full",
-                      drawerMemory.type === 'voice' ? 'bg-red-50 text-red-600' :
-                      drawerMemory.type === 'link' ? 'bg-blue-50 text-blue-600' :
-                      drawerMemory.type === 'image' ? 'bg-green-50 text-green-600' :
-                      'bg-purple-50 text-purple-600'
-                    )}>
+                    <span className={cn("px-2 py-0.5 text-[10px] font-medium rounded-full", MemoryTypeBadgeClass(drawerMemory.type))}>
                       {drawerMemory.type}
                     </span>
                     <span className="text-[10px] text-zinc-300">
@@ -1078,7 +1150,7 @@ export default function AetherApp() {
                   </h3>
                 </div>
 
-                {/* AI Summary */}
+                {/* AI 2-Sentence Summary */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Sparkles className="w-3.5 h-3.5 text-purple-400" />
@@ -1089,18 +1161,42 @@ export default function AetherApp() {
                   </p>
                 </div>
 
-                {/* Raw Content */}
+                {/* Raw Content / Code Block */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <FileText className="w-3.5 h-3.5 text-zinc-400" />
                     <span className="text-xs font-semibold text-zinc-500">Raw Content</span>
                   </div>
                   {drawerMemory.imageUrl ? (
-                    <img
-                      src={drawerMemory.imageUrl}
-                      alt="Captured image"
-                      className="w-full rounded-xl border border-zinc-100"
-                    />
+                    <div className="space-y-3">
+                      <img
+                        src={drawerMemory.imageUrl}
+                        alt="Captured image"
+                        className="w-full rounded-xl border border-zinc-100"
+                      />
+                      {drawerMemory.content && drawerMemory.content !== 'Image capture' && (
+                        <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                          {drawerMemory.content}
+                        </div>
+                      )}
+                    </div>
+                  ) : drawerMemory.sourceUrl ? (
+                    <div className="space-y-2">
+                      <a
+                        href={drawerMemory.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-purple-600 hover:text-purple-700 transition-colors break-all"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                        {drawerMemory.sourceUrl}
+                      </a>
+                      {drawerMemory.content && (
+                        <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                          {drawerMemory.content}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
                       {drawerMemory.content || 'No content'}
@@ -1108,7 +1204,7 @@ export default function AetherApp() {
                   )}
                 </div>
 
-                {/* Deep Insight */}
+                {/* Gemini Deep Professional Insight */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Brain className="w-3.5 h-3.5 text-indigo-400" />
@@ -1121,10 +1217,14 @@ export default function AetherApp() {
 
                 {/* Tags */}
                 <div>
-                  <span className="text-xs font-semibold text-zinc-500 mb-2 block">Tags</span>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Tag className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="text-xs font-semibold text-zinc-500">Tags</span>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {drawerMemory.tags.length > 0 ? drawerMemory.tags.map(tag => (
-                      <span key={tag} className="text-xs px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-full">
+                      <span key={tag} className="text-xs px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-full flex items-center gap-0.5">
+                        <Hash className="w-2.5 h-2.5" />
                         {tag}
                       </span>
                     )) : (
@@ -1133,7 +1233,25 @@ export default function AetherApp() {
                   </div>
                 </div>
 
-                {/* Actions */}
+                {/* Collections */}
+                {drawerMemory.collections.length > 0 && (
+                  <div>
+                    <span className="text-xs font-semibold text-zinc-500 mb-2 block">Collections</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {drawerMemory.collections.map(col => (
+                        <span
+                          key={col.id}
+                          className="text-xs px-2.5 py-1 rounded-full border border-zinc-100"
+                          style={{ backgroundColor: `${col.color}15`, color: col.color, borderColor: `${col.color}30` }}
+                        >
+                          {col.icon} {col.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
                 <div className="flex items-center gap-3 pt-4 border-t border-zinc-100">
                   <button
                     onClick={() => handleDownloadMarkdown(drawerMemory)}
@@ -1156,7 +1274,9 @@ export default function AetherApp() {
         )}
       </AnimatePresence>
 
-      {/* ─── Auth Modal (Mobile / Dashboard) ────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════
+          ─── AUTH MODAL (Mobile / Dashboard) ───────────────────────────
+          ═══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {(authModalOpen || store.showAuthModal) && (
           <motion.div

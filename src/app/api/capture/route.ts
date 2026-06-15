@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -11,9 +13,35 @@ function isSupabaseConfigured(): boolean {
   return !!(url && key && url !== 'your_supabase_url_here' && key !== 'your_supabase_anon_key_here')
 }
 
-async function getSupabaseServer() {
-  const { createClient } = await import('@/lib/supabase/server')
-  return createClient()
+// ═══════════════════════════════════════════════════════════════════════
+// ─── SUPABASE SERVER CLIENT (cookie-aware for Route Handlers) ────────
+// ═══════════════════════════════════════════════════════════════════════
+
+async function getSupabaseRouteClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+  const cookieStore = await cookies()
+
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored if you have middleware refreshing sessions.
+        }
+      },
+    },
+  })
+
+  return supabase
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -33,6 +61,8 @@ function autoGenerateTags(content: string, title: string): string[] {
     recipe: ['recipe', 'cook', 'bake', 'ingredient', 'food', 'meal', 'breakfast', 'dinner', 'lunch'],
     finance: ['budget', 'invest', 'stock', 'savings', 'expense', 'income', 'tax', 'mortgage', 'crypto'],
     health: ['doctor', 'symptom', 'medication', 'workout', 'diet', 'sleep', 'mental health', 'therapy'],
+    idea: ['idea', 'concept', 'brainstorm', 'innovative', 'startup', 'prototype', 'vision'],
+    task: ['todo', 'remind', 'need to', 'must', 'buy', 'deadline', 'urgent'],
   }
 
   const tags: string[] = []
@@ -45,15 +75,24 @@ function autoGenerateTags(content: string, title: string): string[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── AUDIO TRANSCRIPTION (z-ai-web-dev-sdk or Groq Whisper) ──────────
+// ─── AUDIO TRANSCRIPTION (z-ai-web-dev-sdk ASR or Groq Whisper) ──────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function transcribeAudio(audioFile: File): Promise<string> {
   // Try z-ai-web-dev-sdk first (always available in this environment)
   try {
-    const { createTranscription } = await import('@/lib/aether-asr')
-    const transcript = await createTranscription(audioFile)
-    if (transcript?.trim()) return transcript
+    const ZAI = (await import('z-ai-web-dev-sdk')).default
+    const sdk = await ZAI.create()
+    const arrayBuffer = await audioFile.arrayBuffer()
+    const base64Audio = Buffer.from(arrayBuffer).toString('base64')
+    const result = await sdk.audio.asr.create({
+      file_base64: base64Audio,
+    })
+    if (result && typeof result === 'object' && 'text' in result) {
+      const text = (result as { text: string }).text
+      if (text?.trim()) return text
+    }
+    if (typeof result === 'string' && result.trim()) return result
   } catch (err) {
     console.warn('z-ai-web-dev-sdk ASR failed:', err instanceof Error ? err.message : 'Unknown')
   }
@@ -88,15 +127,15 @@ async function transcribeAudio(audioFile: File): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── IMAGE UPLOAD TO SUPABASE STORAGE (optional) ─────────────────────
+// ─── IMAGE UPLOAD TO SUPABASE STORAGE (when configured) ──────────────
 // ═══════════════════════════════════════════════════════════════════════
 
-async function uploadImageToStorage(imageFile: File, userId: string): Promise<string | null> {
-  if (!isSupabaseConfigured()) return null
-
+async function uploadImageToStorage(
+  imageFile: File,
+  userId: string,
+  supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>
+): Promise<string | null> {
   try {
-    const supabase = await getSupabaseServer()
-
     const ext = imageFile.name.split('.').pop() || 'png'
     const filename = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 
@@ -127,7 +166,7 @@ async function uploadImageToStorage(imageFile: File, userId: string): Promise<st
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── GEMINI COGNITIVE SYNTHESIS (optional) ───────────────────────────
+// ─── GEMINI COGNITIVE SYNTHESIS (optional, when key is set) ──────────
 // ═══════════════════════════════════════════════════════════════════════
 
 interface GeminiSynthesis {
@@ -200,7 +239,7 @@ async function synthesizeWithGemini(rawContent: string): Promise<GeminiSynthesis
 // ═══════════════════════════════════════════════════════════════════════
 
 async function matchOrCreateCollections(
-  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>,
   userId: string,
   memoryId: string,
   tags: string[]
@@ -241,7 +280,7 @@ async function matchOrCreateCollections(
 // ═══════════════════════════════════════════════════════════════════════
 
 async function autoSweepCollections(
-  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>,
   userId: string
 ): Promise<void> {
   try {
@@ -303,7 +342,7 @@ async function autoSweepCollections(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── SAVE TO PRISMA (Local Fallback) ─────────────────────────────────
+// ─── SAVE TO PRISMA (Local Fallback — always works) ─────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function saveToPrisma(data: {
@@ -400,12 +439,7 @@ export async function POST(req: NextRequest) {
 
     if (hasImage) {
       memoryType = 'image'
-      // Try uploading to Supabase Storage if configured
-      if (isSupabaseConfigured()) {
-        imageUrl = await uploadImageToStorage(imageFile, 'local')
-      }
-      // If no Supabase or upload failed, we still save the memory without image URL
-      // The frontend can display a placeholder
+      // Image upload will be attempted inside the Supabase block below
     }
 
     // ── STEP 4: Assemble Raw Content ────────────────────────────────
@@ -413,8 +447,8 @@ export async function POST(req: NextRequest) {
     if (hasText) rawContent += text.trim()
     if (hasUrl) rawContent += (rawContent ? '\n\n' : '') + `URL: ${url.trim()}`
     if (audioTranscript) rawContent += (rawContent ? '\n\n' : '') + `Voice Transcript:\n${audioTranscript}`
-    if (imageUrl && !rawContent) rawContent = 'Captured image'
     if (hasImage && !rawContent) rawContent = 'Image capture'
+    if (!rawContent) rawContent = 'Captured content'
 
     if (hasUrl) memoryType = 'link'
     if (hasAudio && hasImage) memoryType = 'voice'
@@ -426,7 +460,7 @@ export async function POST(req: NextRequest) {
     let aiDeepInsight: string | null = null
     let aiTags = autoGenerateTags(rawContent, aiTitle)
 
-    if (rawContent.trim()) {
+    if (rawContent.trim() && rawContent.trim() !== 'Image capture' && rawContent.trim() !== 'Captured content') {
       const synthesis = await synthesizeWithGemini(rawContent)
       if (synthesis) {
         aiTitle = synthesis.suggested_title || aiTitle
@@ -438,14 +472,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── STEP 6: Try Supabase first, then fall back to Prisma ────────
+    // ── STEP 6: Try Supabase first (cookie-aware route handler client) ──
     if (isSupabaseConfigured()) {
       try {
-        const supabase = await getSupabaseServer()
-        const { data: { user } } = await supabase.auth.getUser()
+        const supabase = await getSupabaseRouteClient()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-        if (user) {
+        if (!authError && user) {
           // Authenticated Supabase path
+          // Upload image if present
+          if (hasImage) {
+            imageUrl = await uploadImageToStorage(imageFile, user.id, supabase)
+          }
+
           const { data: memoryRow, error: insertError } = await supabase
             .from('memories')
             .insert({
@@ -502,7 +541,7 @@ export async function POST(req: NextRequest) {
           }
 
           // If Supabase insert failed, fall through to Prisma
-          console.warn('Supabase insert failed, falling back to Prisma')
+          console.warn('Supabase insert failed, falling back to Prisma:', insertError?.message)
         }
       } catch (err) {
         // Supabase not working, fall through to Prisma
@@ -525,8 +564,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, memory })
   } catch (error) {
     console.error('Capture route error:', error)
+    const message = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { error: message },
       { status: 500 }
     )
   }
