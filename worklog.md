@@ -155,3 +155,28 @@ Stage Summary:
 - The store starts with `isAuthenticated: true` and `user: { id: 'local', ... }`
 - `requireAuth()` no longer blocks local users — only blocks if `user` is null
 - All Supabase-dependent code paths gracefully fall through to Prisma/SQLite when Supabase is unavailable
+
+---
+Task ID: 1-6
+Agent: Main
+Task: Fix memories not saving - "failed to connect to database" error on desktop and mobile
+
+Work Log:
+- Diagnosed root cause: Supabase env vars NOT configured (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY missing)
+- The capture route only used Supabase with NO Prisma fallback → always failed
+- The Zustand store blocked local users with auth gates (isAuthenticated: false)
+- Auth routes only used Supabase → login/signup impossible → app completely broken
+- Fixed Zustand store: local users now start as authenticated (isAuthenticated: true)
+- Fixed capture route: added full Prisma fallback when Supabase unavailable
+- Fixed auth routes: login/signup/session/logout all have local auth fallback
+- Fixed Supabase clients: throw clear errors when env vars not configured
+- Removed auth gates from frontend capture handlers
+- Verified all capture types work: text, voice, image - all save to Prisma
+- API tests pass: session returns local user, capture saves to DB, memories fetch correctly
+- Pushed to GitHub new-aether repo
+
+Stage Summary:
+- Core fix: Memories now save correctly using Prisma when Supabase is unavailable
+- All capture flows (text, voice, image) work end-to-end
+- Local users can use the app without Supabase authentication
+- The app works in "local mode" with Prisma/SQLite as the primary database
