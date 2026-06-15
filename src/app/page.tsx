@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
 import { formatDistanceToNow } from 'date-fns'
@@ -14,23 +14,20 @@ import {
   ArrowRight,
   Check,
   Zap,
-  Volume2,
-  Layers,
   Loader2,
   Link2,
   FileText,
   CheckCircle2,
   Clock,
   Image as ImageIcon,
-  ChevronRight,
   Download,
   Trash2,
   Eye,
   LogOut,
   LogIn,
-  Home as HomeIcon,
   Search,
-  Settings,
+  MessageCircle,
+  Volume2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -51,1968 +48,1209 @@ function useIsMobile() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── HELPERS ─────────────────────────────────────────────────────────
+// ─── LIVING DEMO COMPONENT (Framer Motion Typing) ───────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
-function detectContentType(text: string): 'link' | 'task' | 'note' {
-  const lower = text.toLowerCase()
-  if (/https?:\/\//.test(lower) || /\bwww\./.test(lower)) return 'link'
-  if (/\b(todo|remind|need to|buy|must)\b/.test(lower)) return 'task'
-  return 'note'
-}
+function LivingDemo() {
+  const [displayedText, setDisplayedText] = useState('')
+  const [phase, setPhase] = useState<'typing' | 'processing' | 'done'>('typing')
+  const demoText = "I need to build a PC for video editing — what GPU should I get under $500?"
 
-function mapToMemoryType(detected: 'link' | 'task' | 'note'): MemoryType {
-  if (detected === 'link') return 'link'
-  return 'text'
-}
-
-const typeIconMap: Record<string, React.ElementType> = {
-  link: Link2,
-  task: CheckCircle2,
-  note: FileText,
-  voice: Volume2,
-  image: ImageIcon,
-}
-
-function downloadMemoryAsMarkdown(memory: Memory) {
-  const lines: string[] = []
-  lines.push(`# ${memory.title || 'Untitled Memory'}`)
-  lines.push('')
-  lines.push(`**Type:** ${memory.type}`)
-  lines.push(`**Created:** ${new Date(memory.createdAt).toLocaleString()}`)
-  if (memory.tags.length > 0) {
-    lines.push(`**Tags:** ${memory.tags.join(', ')}`)
-  }
-  if (memory.sourceUrl) {
-    lines.push(`**Source:** ${memory.sourceUrl}`)
-  }
-  lines.push('')
-  lines.push('---')
-  lines.push('')
-
-  if (memory.summary) {
-    lines.push('## AI Summary')
-    lines.push('')
-    lines.push(memory.summary)
-    lines.push('')
-  }
-
-  if (memory.deepInsight || memory.recap) {
-    lines.push('## Cognitive Insight')
-    lines.push('')
-    lines.push(memory.deepInsight || memory.recap || '')
-    lines.push('')
-  }
-
-  lines.push('## Original Content')
-  lines.push('')
-  lines.push(memory.content)
-  lines.push('')
-
-  const markdown = lines.join('\n')
-  const blob = new Blob([markdown], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${(memory.title || 'memory').slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}.md`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── ANIMATION VARIANTS ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-const staggerContainer = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.12, delayChildren: 0.2 },
-  },
-}
-
-const staggerChild = {
-  hidden: { opacity: 0, y: 16 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
-  },
-}
-
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.96 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
-  },
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── TYPING ANIMATION DATA ───────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-const DEMO_THOUGHTS = [
-  'The best products are the ones that disappear into your workflow...',
-  'What if memory was as fluid as thought itself?',
-  'Every great idea starts as a fragment before it becomes a system...',
-]
-
-const DEMO_SUMMARIES = [
-  'Products that seamlessly integrate into existing habits become invisible infrastructure. The highest compliment for a tool is when users forget it is there.',
-  'Memory systems should mirror the associative, non-linear nature of human cognition rather than forcing rigid hierarchies. Fluidity enables recall.',
-  'Innovation follows a consistent arc: scattered observations crystallize into coherent frameworks. The fragment is the seed of every breakthrough.',
-]
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── INTERACTIVE DEMO COMPONENT ──────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function InteractiveDemo() {
-  const [phase, setPhase] = useState<'typing' | 'morphing' | 'result'>('typing')
-  const [displayText, setDisplayText] = useState('')
-  const [currentThoughtIdx, setCurrentThoughtIdx] = useState(0)
-  const [showSummary, setShowSummary] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const currentThought = DEMO_THOUGHTS[currentThoughtIdx]
-  const currentSummary = DEMO_SUMMARIES[currentThoughtIdx]
-
-  const runCycle = useCallback(() => {
+  useEffect(() => {
+    let i = 0
+    setDisplayedText('')
     setPhase('typing')
-    setDisplayText('')
-    setShowSummary(false)
-
-    let charIndex = 0
-    const typeInterval = setInterval(() => {
-      if (charIndex < currentThought.length) {
-        setDisplayText(currentThought.slice(0, charIndex + 1))
-        charIndex++
+    const interval = setInterval(() => {
+      if (i < demoText.length) {
+        setDisplayedText(demoText.slice(0, i + 1))
+        i++
       } else {
-        clearInterval(typeInterval)
-        timerRef.current = setTimeout(() => {
-          setPhase('morphing')
-          timerRef.current = setTimeout(() => {
-            setPhase('result')
-            setShowSummary(true)
-            timerRef.current = setTimeout(() => {
-              setCurrentThoughtIdx((prev) => (prev + 1) % DEMO_THOUGHTS.length)
-            }, 4000)
-          }, 800)
-        }, 1200)
+        clearInterval(interval)
+        setTimeout(() => setPhase('processing'), 400)
+        setTimeout(() => setPhase('done'), 1800)
       }
     }, 45)
-
-    return () => {
-      clearInterval(typeInterval)
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [currentThought])
-
-  useEffect(() => {
-    const cleanup = runCycle()
-    return cleanup
-  }, [currentThoughtIdx, runCycle])
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
+    return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (phase === 'done') {
+      const timer = setTimeout(() => {
+        setDisplayedText('')
+        setPhase('typing')
+      }, 4500)
+      return () => clearTimeout(timer)
+    }
+  }, [phase])
 
   return (
     <div className="w-full max-w-xl mx-auto">
-      <motion.div
-        variants={scaleIn}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, margin: '-60px' }}
-        className="relative bg-white rounded-2xl border border-black/[0.06] shadow-[0_8px_40px_rgba(0,0,0,0.06)] overflow-hidden"
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-black/[0.04]">
-          <div className="flex gap-1.5">
-            <div className="size-2.5 rounded-full bg-red-400/70" />
-            <div className="size-2.5 rounded-full bg-yellow-400/70" />
-            <div className="size-2.5 rounded-full bg-green-400/70" />
-          </div>
-          <div className="flex-1 text-center">
-            <span className="text-[11px] text-gray-300 font-medium tracking-wide">AETHER</span>
-          </div>
-          <div className="w-[54px]" />
+      <div className="bg-white rounded-2xl border border-zinc-100 shadow-lg overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-50">
+          <div className="w-3 h-3 rounded-full bg-red-300" />
+          <div className="w-3 h-3 rounded-full bg-yellow-300" />
+          <div className="w-3 h-3 rounded-full bg-green-300" />
+          <span className="ml-3 text-xs text-zinc-400 font-medium">Aether Capture</span>
         </div>
-
-        <div className="p-5 min-h-[220px] flex flex-col">
-          <div className="bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2 mb-4">
-            <div className="flex items-center gap-2">
-              <div className="size-8 rounded-xl flex items-center justify-center text-gray-300">
-                <Mic className="size-4" />
-              </div>
-              <div className="flex-1 text-sm text-gray-800 min-h-[28px] flex items-center">
-                {displayText}
-                {phase === 'typing' && (
-                  <motion.span
-                    animate={{ opacity: [1, 0] }}
-                    transition={{ duration: 0.6, repeat: Infinity }}
-                    className="inline-block w-[2px] h-4 bg-purple-500 ml-0.5"
-                  />
-                )}
-              </div>
-              <div className={cn(
-                'size-8 rounded-xl flex items-center justify-center transition-all',
-                displayText ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
-              )}>
-                <Send className="size-3.5" />
-              </div>
-            </div>
+        <div className="p-5">
+          <div className="flex items-center gap-3 bg-zinc-50/80 rounded-xl px-4 py-3 mb-4">
+            <Zap className="w-4 h-4 text-purple-400 shrink-0" />
+            <span className="text-sm text-zinc-700 min-h-[20px]">
+              {displayedText}
+              {phase === 'typing' && <span className="animate-pulse text-purple-500">|</span>}
+            </span>
           </div>
-
           <AnimatePresence mode="wait">
-            {phase === 'result' && showSummary && (
+            {phase === 'processing' && (
               <motion.div
-                initial={{ opacity: 0, y: 12, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-                className="bg-gray-50/80 border border-black/[0.03] rounded-xl p-4"
+                key="processing"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex items-center gap-2 text-xs text-zinc-400"
               >
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Sparkles className="size-3 text-purple-500" />
-                  <span className="text-[11px] font-medium text-purple-500 tracking-wide">AI SUMMARY</span>
-                </div>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  {currentSummary}
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Synthesizing insight...</span>
+              </motion.div>
+            )}
+            {phase === 'done' && (
+              <motion.div
+                key="done"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="bg-white border border-zinc-100 rounded-xl p-4 shadow-sm"
+              >
+                <p className="font-semibold text-sm text-zinc-800 mb-1">PC Build GPU Research</p>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Considering video editing needs under $500, the RTX 4060 Ti offers excellent value with NVENC encoding support and 16GB VRAM options for timeline scrubbing.
                 </p>
+                <div className="flex gap-2 mt-3">
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">hardware</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full">video-editing</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">budget</span>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
-
-          {phase !== 'result' && <div className="flex-1" />}
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── CARD AUTH FORM (EMBEDDED IN PRICING CARDS) ──────────────────────
+// ─── MAIN APPLICATION COMPONENT ─────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
-function CardAuthForm({ mode, onSuccess }: { mode: 'signup' | 'premium'; onSuccess: () => void }) {
-  const { signup } = useAetherStore()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim() || !password.trim()) {
-      toast.error('Please fill in email and password')
-      return
-    }
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const success = await signup(email.trim(), password, email.trim().split('@')[0])
-      if (success) {
-        toast.success('Welcome to Aether!')
-        onSuccess()
-      } else {
-        toast.error('Signup failed. Email may already be in use.')
-      }
-    } catch {
-      toast.error('Something went wrong. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3 mt-4">
-      <input
-        type="email"
-        placeholder="Email address"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        disabled={isLoading}
-        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
-      />
-      <input
-        type="password"
-        placeholder="Password (6+ characters)"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        disabled={isLoading}
-        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
-      />
-      <button
-        type="submit"
-        disabled={isLoading}
-        className={cn(
-          'w-full flex items-center justify-center gap-2 rounded-lg h-10 font-medium text-sm transition-all',
-          mode === 'premium'
-            ? 'bg-gradient-to-r from-purple-600 to-rose-500 hover:from-purple-700 hover:to-rose-600 text-white'
-            : 'bg-gray-900 hover:bg-gray-800 text-white',
-          'disabled:opacity-50 disabled:cursor-not-allowed'
-        )}
-      >
-        {isLoading ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : mode === 'premium' ? (
-          <>
-            Unlock Premium Sanctuary
-            <ArrowRight className="size-3.5" />
-          </>
-        ) : (
-          'Create Free Account'
-        )}
-      </button>
-    </form>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── SIGN IN DIALOG ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function SignInDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { login } = useAetherStore()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim() || !password.trim()) {
-      toast.error('Please fill in email and password')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const success = await login(email.trim(), password)
-      if (success) {
-        toast.success('Welcome back!')
-        onClose()
-      } else {
-        toast.error('Invalid email or password')
-      }
-    } catch {
-      toast.error('Something went wrong')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
-            onClick={onClose}
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.97, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: -10 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed top-20 right-8 z-50 w-80 bg-white border border-black/[0.04] shadow-[0_16px_48px_rgba(0,0,0,0.08)] rounded-2xl p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-sm font-semibold text-gray-900">Sign In</h3>
-              <button
-                onClick={onClose}
-                className="size-7 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <input
-                type="email"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-                autoFocus
-                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg h-10 font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? <Loader2 className="size-4 animate-spin" /> : 'Sign In'}
-              </button>
-            </form>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── MOBILE AUTH DRAWER ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function MobileAuthDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { login, signup } = useAetherStore()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  const resetForm = () => {
-    setEmail('')
-    setPassword('')
-    setName('')
-    setIsLoading(false)
-  }
-
-  const handleClose = () => {
-    onClose()
-    setTimeout(resetForm, 200)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim() || !password.trim()) {
-      toast.error('Please fill in email and password')
-      return
-    }
-    if (mode === 'signup' && password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const success = mode === 'login'
-        ? await login(email.trim(), password)
-        : await signup(email.trim(), password, name.trim())
-
-      if (success) {
-        toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
-        handleClose()
-      } else {
-        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
-      }
-    } catch {
-      toast.error('Something went wrong. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
-            onClick={handleClose}
-          />
-          <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
-            <div className="flex justify-end mb-2">
-              <button
-                onClick={handleClose}
-                className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
-            </h3>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {mode === 'signup' && (
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={isLoading}
-                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-                />
-              )}
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-                autoFocus
-                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-              />
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={cn(
-                  'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-11 font-medium text-sm transition-colors',
-                  'disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
-              >
-                {isLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  mode === 'login' ? 'Sign In' : 'Create Account'
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
-                disabled={isLoading}
-              >
-                {mode === 'login' ? 'Sign up' : 'Sign in'}
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── DESKTOP LANDING PAGE ────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function LandingPage({ onSkipToDashboard }: { onSkipToDashboard: () => void }) {
-  const [showSignIn, setShowSignIn] = useState(false)
-  const handleAuthSuccess = useCallback(() => {
-    // Auth success is handled by the store; Home will switch to Dashboard
-  }, [])
-
-  return (
-    <div className="min-h-screen bg-[#F9FAFB] flex flex-col relative overflow-hidden">
-      {/* Background ambient blobs */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-purple-100/40 blur-3xl animate-ambient-drift" />
-        <div className="absolute top-1/3 -right-32 w-80 h-80 rounded-full bg-rose-100/30 blur-3xl animate-ambient-drift-alt" />
-        <div className="absolute -bottom-24 left-1/4 w-72 h-72 rounded-full bg-amber-100/20 blur-3xl animate-ambient-drift" />
-      </div>
-
-      {/* Floating Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="size-9 rounded-xl bg-zinc-900 flex items-center justify-center shadow-sm">
-              <Brain className="size-5 text-white" />
-            </div>
-            <span className="text-sm font-semibold text-gray-900 tracking-tight">Aether</span>
-          </div>
-          <button
-            onClick={() => setShowSignIn(true)}
-            className="text-sm font-medium text-gray-500 hover:text-gray-900 px-4 py-2 rounded-lg hover:bg-white/60 border border-transparent hover:border-black/[0.06] transition-all"
-          >
-            Sign In
-          </button>
-        </div>
-      </header>
-
-      {/* Section 1: The Purpose Hero */}
-      <section className="flex-1 flex items-center justify-center pt-24 pb-16 px-6 relative">
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-          className="max-w-2xl mx-auto text-center"
-        >
-          <motion.div variants={staggerChild} className="mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 border border-purple-100/60">
-              <Sparkles className="size-3 text-purple-500" />
-              <span className="text-[11px] font-medium text-purple-600 tracking-wide">COGNITIVE SANCTUARY</span>
-            </div>
-          </motion.div>
-
-          <motion.h1
-            variants={staggerChild}
-            className="text-4xl sm:text-5xl md:text-[56px] font-semibold text-gray-900 tracking-tight leading-[1.1] mb-6"
-          >
-            A sanctuary for thoughts{' '}
-            <span className="bg-gradient-to-r from-purple-600 to-rose-500 bg-clip-text text-transparent">
-              that move too fast.
-            </span>
-          </motion.h1>
-
-          <motion.p
-            variants={staggerChild}
-            className="text-base sm:text-lg text-gray-500 leading-relaxed max-w-xl mx-auto"
-          >
-            An elite cognitive workspace built to capture raw spoken audio, code logic, images, and links. Zero clutter. Total structural recall.
-          </motion.p>
-
-          <motion.div variants={staggerChild} className="mt-8 flex flex-col items-center gap-4">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => {
-                  const el = document.getElementById('pricing')
-                  if (el) el.scrollIntoView({ behavior: 'smooth' })
-                }}
-                className="inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl px-6 h-11 font-medium text-sm transition-colors"
-              >
-                Get Started
-                <ArrowRight className="size-4" />
-              </button>
-              <button
-                onClick={() => setShowSignIn(true)}
-                className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 rounded-xl px-6 h-11 font-medium text-sm hover:bg-white/60 border border-black/[0.06] transition-all"
-              >
-                Sign In
-              </button>
-            </div>
-            <button
-              onClick={onSkipToDashboard}
-              className="text-xs text-gray-400 hover:text-purple-500 transition-colors underline underline-offset-4"
-            >
-              Try without an account →
-            </button>
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* Section 2: The Living Interactive Demo */}
-      <section className="py-16 px-6">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: '-60px' }}
-          variants={staggerContainer}
-          className="max-w-6xl mx-auto"
-        >
-          <motion.div variants={staggerChild} className="text-center mb-10">
-            <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">See it in action</span>
-          </motion.div>
-          <InteractiveDemo />
-        </motion.div>
-      </section>
-
-      {/* Section 3: Asymmetric Pricing & Registration Matrix */}
-      <section id="pricing" className="py-20 px-6 pb-32">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: '-60px' }}
-          variants={staggerContainer}
-          className="max-w-4xl mx-auto"
-        >
-          <motion.div variants={staggerChild} className="text-center mb-12">
-            <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight mb-3">
-              Begin your cognitive journey
-            </h2>
-            <p className="text-sm text-gray-400">No credit card required. Start thinking freely.</p>
-          </motion.div>
-
-          <motion.div variants={staggerChild} className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            {/* Left Card: Ambient Free Tier */}
-            <div className="bg-white border border-black/[0.06] rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow duration-300">
-              <div className="mb-6">
-                <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">Ambient</span>
-              </div>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className="text-4xl font-semibold text-gray-900">$0.00</span>
-                <span className="text-sm text-gray-400">/ Free</span>
-              </div>
-              <p className="text-sm text-gray-500 leading-relaxed mb-5">
-                15 Cognitive Captures per month, standard voice dictation, and basic timeline indexing.
-              </p>
-              <ul className="space-y-2.5 mb-2">
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check className="size-3.5 text-green-500 shrink-0" />
-                  15 captures / month
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check className="size-3.5 text-green-500 shrink-0" />
-                  Text & link capture
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check className="size-3.5 text-green-500 shrink-0" />
-                  AI summaries
-                </li>
-                <li className="flex items-center gap-2 text-sm text-gray-600">
-                  <Check className="size-3.5 text-green-500 shrink-0" />
-                  Local timeline indexing
-                </li>
-              </ul>
-              <div className="mt-6 pt-5 border-t border-black/[0.04]">
-                <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
-                  Create Free Account
-                </label>
-                <CardAuthForm mode="signup" onSuccess={handleAuthSuccess} />
-              </div>
-            </div>
-
-            {/* Right Card: Ascent Premium Tier */}
-            <div className="relative bg-white rounded-2xl p-8 shadow-[0_8px_40px_rgba(0,0,0,0.06)]">
-              <div className="absolute inset-0 rounded-2xl p-[2px] animate-gradient-border bg-[length:200%_200%] bg-gradient-to-r from-purple-500 via-rose-400 to-purple-600">
-                <div className="w-full h-full bg-white rounded-[14px]" />
-              </div>
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-6">
-                  <span className="text-[11px] font-medium text-purple-500 tracking-widest uppercase">Ascent</span>
-                  <span className="text-[10px] font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100/60">
-                    PREMIUM
-                  </span>
-                </div>
-                <div className="flex items-baseline gap-1 mb-2">
-                  <span className="text-4xl font-semibold text-gray-900">$5.99</span>
-                  <span className="text-sm text-gray-400">/ month</span>
-                </div>
-                <p className="text-sm text-gray-500 leading-relaxed mb-5">
-                  Infinite Cognitive Scale, sub-second Groq voice pipelines, deep Gemini insights, and autonomous 10-memory auto-collection grouping.
-                </p>
-                <ul className="space-y-2.5 mb-2">
-                  <li className="flex items-center gap-2 text-sm text-gray-600">
-                    <Zap className="size-3.5 text-purple-500 shrink-0" />
-                    Unlimited captures
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-gray-600">
-                    <Volume2 className="size-3.5 text-purple-500 shrink-0" />
-                    Sub-second Groq voice processing
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-gray-600">
-                    <Brain className="size-3.5 text-purple-500 shrink-0" />
-                    Deep cognitive insights
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-gray-600">
-                    <Layers className="size-3.5 text-purple-500 shrink-0" />
-                    Auto-clustering collections
-                  </li>
-                  <li className="flex items-center gap-2 text-sm text-gray-600">
-                    <Sparkles className="size-3.5 text-purple-500 shrink-0" />
-                    Priority AI synthesis
-                  </li>
-                </ul>
-                <div className="mt-6 pt-5 border-t border-black/[0.04]">
-                  <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
-                    Unlock Premium Sanctuary
-                  </label>
-                  <CardAuthForm mode="premium" onSuccess={handleAuthSuccess} />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        </motion.div>
-      </section>
-
-      {/* Footer */}
-      <footer className="py-6 text-center border-t border-black/[0.03]">
-        <p className="text-xs text-gray-400">Aether &mdash; Your cognitive sanctuary</p>
-      </footer>
-
-      {/* Sign In Dialog */}
-      <SignInDialog open={showSignIn} onClose={() => setShowSignIn(false)} />
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── INSPECTION DRAWER ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function InspectionDrawer({
-  memory,
-  open,
-  onClose,
-  onPurge,
-  onDownload,
-}: {
-  memory: Memory | null
-  open: boolean
-  onClose: () => void
-  onPurge: (id: string) => void
-  onDownload: (memory: Memory) => void
-}) {
-  const [confirmPurge, setConfirmPurge] = useState(false)
-
-  // Reset confirm state when drawer closes
-  const handleClose = useCallback(() => {
-    setConfirmPurge(false)
-    onClose()
-  }, [onClose])
-
-  if (!memory) return null
-
-  const handlePurgeClick = () => {
-    if (!confirmPurge) {
-      setConfirmPurge(true)
-      return
-    }
-    onPurge(memory.id)
-  }
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="fixed top-0 right-0 h-full w-full sm:w-[450px] bg-white border-l border-zinc-200 p-6 sm:p-8 shadow-2xl z-50 overflow-y-auto"
-        >
-          {/* Close button */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Eye className="size-4 text-purple-500" />
-              <span className="text-xs font-medium text-purple-500 tracking-wide uppercase">Inspection</span>
-            </div>
-            <button
-              onClick={handleClose}
-              className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-
-          {/* AI Summary */}
-          {memory.summary && (
-            <div className="mb-6">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Sparkles className="size-3 text-purple-500" />
-                <span className="text-[11px] font-medium text-purple-500 tracking-wide uppercase">AI Summary</span>
-              </div>
-              <p className="text-sm text-gray-700 leading-relaxed">{memory.summary}</p>
-            </div>
-          )}
-
-          {/* Raw Original Content */}
-          <div className="mb-6">
-            <div className="flex items-center gap-1.5 mb-2">
-              <FileText className="size-3 text-gray-400" />
-              <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Original Content</span>
-            </div>
-            <div className="bg-gray-50 border border-black/[0.04] rounded-xl p-4 max-h-60 overflow-y-auto">
-              {memory.imageUrl && (
-                <img
-                  src={memory.imageUrl}
-                  alt="Memory image"
-                  className="w-full rounded-lg mb-3 max-h-40 object-cover"
-                />
-              )}
-              {memory.imagePreview && !memory.imageUrl && (
-                <img
-                  src={memory.imagePreview}
-                  alt="Memory image preview"
-                  className="w-full rounded-lg mb-3 max-h-40 object-cover"
-                />
-              )}
-              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{memory.content}</p>
-            </div>
-          </div>
-
-          {/* Source URL */}
-          {memory.sourceUrl && (
-            <div className="mb-6">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Link2 className="size-3 text-gray-400" />
-                <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Source</span>
-              </div>
-              <a
-                href={memory.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-purple-600 hover:text-purple-800 underline break-all"
-              >
-                {memory.sourceUrl}
-              </a>
-            </div>
-          )}
-
-          {/* Deep Cognitive Insight */}
-          {(memory.deepInsight || memory.recap) && (
-            <div className="mb-6">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Brain className="size-3 text-purple-500" />
-                <span className="text-[11px] font-medium text-purple-500 tracking-wide uppercase">Deep Insight</span>
-              </div>
-              <div className="bg-purple-50/50 border border-purple-100/60 rounded-xl p-4">
-                <p className="text-sm text-gray-700 leading-relaxed">{memory.deepInsight || memory.recap}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Tags */}
-          {memory.tags.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Layers className="size-3 text-gray-400" />
-                <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Tags</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {memory.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Metadata */}
-          <div className="mb-8">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Clock className="size-3 text-gray-400" />
-              <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Metadata</span>
-            </div>
-            <div className="text-xs text-gray-500 space-y-1">
-              <p>Type: {memory.type}</p>
-              <p>Created: {new Date(memory.createdAt).toLocaleString()}</p>
-              {memory.collections && memory.collections.length > 0 && (
-                <p>Collections: {memory.collections.map((c) => c.name).join(', ')}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-3 pt-4 border-t border-zinc-100">
-            <button
-              onClick={() => onDownload(memory)}
-              className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-11 font-medium text-sm transition-colors"
-            >
-              <Download className="size-4" />
-              Download Markdown Asset
-            </button>
-            <button
-              onClick={handlePurgeClick}
-              className={cn(
-                'w-full flex items-center justify-center gap-2 rounded-xl h-11 font-medium text-sm transition-colors',
-                confirmPurge
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
-              )}
-            >
-              <Trash2 className="size-4" />
-              {confirmPurge ? 'Confirm Purge Asset' : 'Purge Asset'}
-            </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── MEMORY CARD ─────────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function MemoryCard({
-  memory,
-  onClick,
-}: {
-  memory: Memory
-  onClick: () => void
-}) {
-  const TypeIcon = typeIconMap[memory.type] || typeIconMap.note
-
-  return (
-    <motion.button
-      layout
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8, scale: 0.96 }}
-      transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
-      onClick={onClick}
-      className="w-full text-left bg-white border border-black/[0.04] rounded-xl p-4 hover:shadow-md hover:border-purple-200/40 transition-all duration-200 group"
-    >
-      <div className="flex items-start gap-3">
-        <div className="size-8 rounded-lg flex items-center justify-center shrink-0 bg-gray-50 text-gray-400 group-hover:bg-purple-50 group-hover:text-purple-500 transition-colors">
-          <TypeIcon className="size-4" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-900 font-medium truncate leading-tight mb-1">
-            {memory.title || 'Untitled'}
-          </p>
-          {memory.summary && (
-            <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-1.5">
-              {memory.summary}
-            </p>
-          )}
-          {!memory.summary && memory.content && (
-            <p className="text-xs text-gray-400 leading-relaxed line-clamp-2 mb-1.5">
-              {memory.content.slice(0, 120)}
-            </p>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-400">
-              {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
-            </span>
-            {memory.tags.length > 0 && (
-              <div className="flex gap-1">
-                {memory.tags.slice(0, 2).map((tag) => (
-                  <span
-                    key={tag}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <ChevronRight className="size-4 text-gray-300 group-hover:text-purple-400 shrink-0 mt-1 transition-colors" />
-      </div>
-    </motion.button>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── DASHBOARD VIEW ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function DashboardView() {
-  const {
-    memories,
-    addMemory,
-    deleteMemory,
-    deleteMemoryFromDB,
-    isLoading,
-    isAuthenticated,
-    fetchMemories,
-  } = useAetherStore()
-
+export default function AetherApp() {
+  const store = useAetherStore()
   const isMobile = useIsMobile()
 
-  // Capture state
+  // ── Capture State ────────────────────────────────────────────────
   const [captureText, setCaptureText] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
-  const [showCaptureAnimation, setShowCaptureAnimation] = useState(false)
-
-  // Voice recording state
+  const [isCapturing, setIsCapturing] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
-  const [isTranscribing, setIsTranscribing] = useState(false)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-
-  // Image upload state
-  const [imagePreview, setImagePreview] = useState<{ file: File; url: string; name: string } | null>(null)
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Inspection drawer state
-  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
+  // ── Auth State ───────────────────────────────────────────────────
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authName, setAuthName] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [freeEmail, setFreeEmail] = useState('')
+  const [freePassword, setFreePassword] = useState('')
+  const [premiumEmail, setPremiumEmail] = useState('')
+  const [premiumPassword, setPremiumPassword] = useState('')
+
+  // ── Suggestion Box State ─────────────────────────────────────────
+  const [newMemoryIds, setNewMemoryIds] = useState<Set<string>>(new Set())
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set())
+
+  // ── Ask AI State ─────────────────────────────────────────────────
+  const [askAIOpen, setAskAIOpen] = useState(false)
+  const [askAIQuery, setAskAIQuery] = useState('')
+  const [askAIResponse, setAskAIResponse] = useState('')
+  const [askAILoading, setAskAILoading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // ── Inspection Drawer State ──────────────────────────────────────
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerMemory, setDrawerMemory] = useState<Memory | null>(null)
 
-  // Auth modal state (for mobile)
-  const [showMobileAuth, setShowMobileAuth] = useState(false)
+  // ═════════════════════════════════════════════════════════════════
+  // ─── EFFECTS ─────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
 
-  // Input ref
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Fetch memories on mount
   useEffect(() => {
-    fetchMemories()
-  }, [fetchMemories])
+    store.checkSession()
+  }, [])
 
-  // Sorted memories
-  const sortedMemories = useMemo(() => {
-    if (!Array.isArray(memories)) return []
-    return [...memories].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    )
-  }, [memories])
-
-  // ── AUTH GATE FOR CAPTURE (soft gate - guest mode allowed) ──────────
-  const gateCapture = useCallback((): boolean => {
-    if (!isAuthenticated) {
-      if (isMobile) {
-        setShowMobileAuth(true)
-        return false
-      }
-      // Desktop: allow guest mode with a soft reminder
-      toast.info('Sign in to sync memories across devices', { duration: 3000 })
+  useEffect(() => {
+    if (store.isAuthenticated) {
+      store.fetchMemories()
+      store.fetchCollections()
     }
-    return true
-  }, [isAuthenticated, isMobile])
+  }, [store.isAuthenticated])
 
-  // ── UNIVERSAL CAPTURE SUBMIT ───────────────────────────────────────
-  const handleCaptureSubmit = useCallback(async () => {
-    if (!gateCapture()) return
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [askAIResponse])
 
+  // ═════════════════════════════════════════════════════════════════
+  // ─── HANDLERS ────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
+  const handleCapture = useCallback(async () => {
     const text = captureText.trim()
-    const image = imagePreview
+    if (!text && !selectedImage && !isRecording) return
 
-    if (!text && !image) return
+    if (!store.isAuthenticated) {
+      store.setShowAuthModal(true)
+      store.requireAuth(() => handleCapture())
+      return
+    }
 
-    setIsSaving(true)
-    setShowCaptureAnimation(true)
+    setIsCapturing(true)
 
     try {
-      const formData = new FormData()
+      if (selectedImage) {
+        const formData = new FormData()
+        formData.append('image', selectedImage)
+        if (text) formData.append('text', text)
 
-      if (text.trim()) {
-        formData.append('text', text.trim())
-      }
+        const res = await fetch('/api/capture', { method: 'POST', body: formData })
+        if (!res.ok) throw new Error('Capture failed')
+        const data = await res.json()
 
-      if (image?.file) {
-        formData.append('image', image.file)
-        formData.append('type', 'image')
-      } else {
-        const detected = detectContentType(text || 'note')
-        formData.append('type', mapToMemoryType(detected))
-
-        if (detected === 'link') {
-          formData.append('url', text.trim())
+        if (data.memory) {
+          store.addMemory(data.memory)
+          setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
+          toast.success('Image captured!')
         }
-      }
+      } else {
+        const isUrl = /^https?:\/\//i.test(text)
+        const memoryType: MemoryType = isUrl ? 'link' : 'text'
+        const result = await store.saveMemory({
+          type: memoryType,
+          title: isUrl ? 'Saved Link' : text.slice(0, 60),
+          content: text,
+          sourceUrl: isUrl ? text : null,
+        })
 
-      const response = await fetch('/api/capture', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        const errorMessage = (errorData as { error?: string }).error || `Server error: ${response.status}`
-        throw new Error(errorMessage)
-      }
-
-      const data = await response.json()
-
-      if (data.success && data.memory) {
-        const newMemory = data.memory as Memory
-        addMemory(newMemory)
+        if (result) {
+          setNewMemoryIds(prev => new Set([...prev, result.id]))
+          toast.success('Memory captured!')
+        }
       }
 
       setCaptureText('')
-      setImagePreview(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-
-      setTimeout(() => {
-        inputRef.current?.focus()
-      }, 50)
-
-      toast.success('Memory captured')
-    } catch (error) {
-      console.error('[Dashboard] Capture failed:', error)
-      const message = error instanceof Error ? error.message : 'Failed to save — please try again'
-      toast.error(message)
+      setSelectedImage(null)
+      setImagePreviewUrl(null)
+    } catch (err) {
+      console.error('Capture error:', err)
+      toast.error('Failed to capture. Please try again.')
     } finally {
-      setIsSaving(false)
-      setTimeout(() => setShowCaptureAnimation(false), 300)
+      setIsCapturing(false)
     }
-  }, [captureText, imagePreview, addMemory, gateCapture])
+  }, [captureText, selectedImage, isRecording, store])
 
-  // ── VOICE RECORDING ────────────────────────────────────────────────
-  const handleMicClick = useCallback(() => {
-    if (!gateCapture()) return
-    if (isRecording) {
-      stopRecording()
-    } else {
-      startRecording()
-    }
-  }, [isRecording, gateCapture])
-
-  const startRecording = useCallback(async () => {
+  const handleStartRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm',
-      })
-      audioChunksRef.current = []
+      const recorder = new MediaRecorder(stream)
+      const chunks: BlobPart[] = []
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data)
       }
 
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop())
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        setIsTranscribing(true)
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' })
+        stream.getTracks().forEach(t => t.stop())
 
+        if (!store.isAuthenticated) {
+          store.setShowAuthModal(true)
+          toast.error('Please sign in to capture voice notes')
+          return
+        }
+
+        setIsCapturing(true)
         try {
           const formData = new FormData()
-          formData.append('audio', audioBlob, 'recording.webm')
-          formData.append('type', 'voice')
+          formData.append('audio', blob, 'recording.webm')
+          formData.append('text', '')
 
-          const currentText = captureText.trim()
-          if (currentText) {
-            formData.append('text', currentText)
+          const res = await fetch('/api/capture', { method: 'POST', body: formData })
+          if (!res.ok) throw new Error('Voice capture failed')
+          const data = await res.json()
+
+          if (data.memory) {
+            store.addMemory(data.memory)
+            setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
+            toast.success('Voice note captured!')
           }
-
-          const response = await fetch('/api/capture', {
-            method: 'POST',
-            body: formData,
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            if (data.success && data.memory) {
-              addMemory(data.memory as Memory)
-            }
-            setCaptureText('')
-            setImagePreview(null)
-            if (fileInputRef.current) fileInputRef.current.value = ''
-            toast.success('Voice memory captured')
-          } else {
-            toast.error('Voice capture failed')
-          }
-        } catch {
-          toast.error('Voice capture failed')
+        } catch (err) {
+          console.error('Voice capture error:', err)
+          toast.error('Failed to process voice note')
         } finally {
-          setIsTranscribing(false)
+          setIsCapturing(false)
         }
       }
 
-      mediaRecorderRef.current = mediaRecorder
-      mediaRecorder.start()
+      recorder.start()
+      setMediaRecorder(recorder)
       setIsRecording(true)
     } catch {
       toast.error('Microphone access denied')
     }
-  }, [captureText, addMemory])
+  }, [store])
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop()
+  const handleStopRecording = useCallback(() => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop()
       setIsRecording(false)
+      setMediaRecorder(null)
     }
-  }, [])
+  }, [mediaRecorder])
 
-  // ── IMAGE UPLOAD ───────────────────────────────────────────────────
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!gateCapture()) return
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Only image files')
-      return
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Under 10MB')
-      return
-    }
+    setSelectedImage(file)
     const url = URL.createObjectURL(file)
-    setImagePreview({ file, url, name: file.name })
-  }, [gateCapture])
-
-  const removeImage = useCallback(() => {
-    if (imagePreview) URL.revokeObjectURL(imagePreview.url)
-    setImagePreview(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [imagePreview])
-
-  // ── INSPECTION DRAWER ──────────────────────────────────────────────
-  const openDrawer = useCallback((memory: Memory) => {
-    setSelectedMemory(memory)
-    setDrawerOpen(true)
+    setImagePreviewUrl(url)
   }, [])
 
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false)
-    setTimeout(() => setSelectedMemory(null), 300)
-  }, [])
-
-  // ── PURGE MEMORY ───────────────────────────────────────────────────
-  const handlePurge = useCallback(async (id: string) => {
+  const handleAuth = useCallback(async (mode: 'login' | 'signup', email: string, password: string, name?: string) => {
+    setAuthLoading(true)
     try {
-      await fetch(`/api/capture?id=${id}`, { method: 'DELETE' })
+      let success = false
+      if (mode === 'login') {
+        success = await store.login(email, password)
+      } else {
+        success = await store.signup(email, password, name || '')
+      }
+      if (success) {
+        setAuthModalOpen(false)
+        setAuthEmail('')
+        setAuthPassword('')
+        setAuthName('')
+        toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
+      } else {
+        toast.error(mode === 'login' ? 'Invalid credentials' : 'Signup failed. Try again.')
+      }
     } catch {
-      // Fallback: try the store's delete method
+      toast.error('Authentication error')
+    } finally {
+      setAuthLoading(false)
     }
-    try {
-      await deleteMemoryFromDB(id)
-    } catch {
-      // Continue anyway
-    }
-    deleteMemory(id)
-    closeDrawer()
-    toast.success('Memory purged')
-  }, [deleteMemory, deleteMemoryFromDB, closeDrawer])
+  }, [store])
 
-  // ── DOWNLOAD MARKDOWN ──────────────────────────────────────────────
-  const handleDownload = useCallback((memory: Memory) => {
-    downloadMemoryAsMarkdown(memory)
-    toast.success('Downloaded as markdown')
+  const handleApplySuggestion = useCallback((memoryId: string) => {
+    setAppliedIds(prev => new Set([...prev, memoryId]))
+    toast.success('AI suggestions applied!')
   }, [])
 
-  // ── Keyboard handler ───────────────────────────────────────────────
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleCaptureSubmit()
+  const handleDeleteMemory = useCallback(async (id: string) => {
+    try {
+      await store.deleteMemoryFromDB(id)
+      setDrawerOpen(false)
+      setDrawerMemory(null)
+      toast.success('Memory purged')
+    } catch {
+      toast.error('Failed to delete memory')
     }
-  }, [handleCaptureSubmit])
+  }, [store])
+
+  const handleDownloadMarkdown = useCallback((memory: Memory) => {
+    const md = `# ${memory.title || 'Untitled'}\n\n`
+      + `**Type:** ${memory.type}\n`
+      + `**Date:** ${new Date(memory.createdAt).toLocaleDateString()}\n\n`
+      + `## Summary\n${memory.summary || 'No summary available.'}\n\n`
+      + `## Raw Content\n${memory.content}\n\n`
+      + `## Deep Insight\n${memory.deepInsight || 'No deep insight available.'}\n\n`
+      + `## Tags\n${memory.tags.join(', ') || 'None'}\n`
+
+    const blob = new Blob([md], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${memory.title?.slice(0, 40) || 'memory'}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const handleAskAI = useCallback(async () => {
+    const q = askAIQuery.trim()
+    if (!q) return
+
+    setAskAILoading(true)
+    setAskAIResponse('')
+
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q }),
+      })
+
+      if (!res.ok || !res.body) throw new Error('Chat failed')
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let fullText = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        fullText += chunk
+        setAskAIResponse(fullText)
+      }
+    } catch {
+      setAskAIResponse('I couldn\'t search your memories right now. Please try again.')
+    } finally {
+      setAskAILoading(false)
+    }
+  }, [askAIQuery])
+
+  const handleSignOut = useCallback(async () => {
+    await store.logout()
+    toast.success('Signed out')
+  }, [store])
+
+  // ═════════════════════════════════════════════════════════════════
+  // ─── COMPUTED VALUES ─────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
+  const showLanding = !isMobile && !store.isAuthenticated
+
+  const filteredMemories = store.memories.filter(m => {
+    if (store.filterType !== 'all' && m.type !== store.filterType) return false
+    if (store.searchQuery) {
+      const q = store.searchQuery.toLowerCase()
+      return (
+        m.title.toLowerCase().includes(q) ||
+        m.content.toLowerCase().includes(q) ||
+        m.tags.some(t => t.toLowerCase().includes(q))
+      )
+    }
+    return true
+  })
+
+  // ═════════════════════════════════════════════════════════════════
+  // ─── RENDER: STATE A — LANDING PAGE ──────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
+  if (showLanding) {
+    return (
+      <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
+        {/* Header */}
+        <header className="sticky top-0 z-50 bg-[#FAFAFA]/80 backdrop-blur-md border-b border-zinc-100">
+          <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-lg font-bold text-zinc-900 tracking-tight">Aether</span>
+            </div>
+            <button
+              onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              Sign In
+            </button>
+          </div>
+        </header>
+
+        {/* Purpose Hero */}
+        <section className="flex-1 flex flex-col items-center justify-center px-6 pt-20 pb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7 }}
+            className="text-center max-w-3xl mx-auto"
+          >
+            <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-zinc-900 leading-[1.1]">
+              A sanctuary for thoughts
+              <br />
+              <span className="bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                that move too fast.
+              </span>
+            </h1>
+            <p className="mt-6 text-lg text-zinc-500 max-w-xl mx-auto leading-relaxed">
+              Built for builders, creators, and divergent minds who need zero-friction mental clarity.
+            </p>
+            <div className="mt-8 flex items-center justify-center gap-3 text-sm text-zinc-400">
+              <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Sub-second voice capture</span>
+              <span className="text-zinc-200">·</span>
+              <span className="flex items-center gap-1.5"><Brain className="w-3.5 h-3.5" /> AI-powered synthesis</span>
+              <span className="text-zinc-200">·</span>
+              <span className="flex items-center gap-1.5"><Search className="w-3.5 h-3.5" /> Semantic search</span>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* Interactive Living Demo */}
+        <section className="px-6 pb-20">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.3 }}
+          >
+            <LivingDemo />
+          </motion.div>
+        </section>
+
+        {/* Asymmetric Pricing & Registration Matrix */}
+        <section className="px-6 pb-24">
+          <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-6">
+            {/* Free Tier Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="bg-white rounded-2xl border border-zinc-100 p-8 flex flex-col"
+            >
+              <div className="mb-6">
+                <p className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Ambient</p>
+                <p className="text-4xl font-bold text-zinc-900">$0.00 <span className="text-base font-normal text-zinc-400">/ Free</span></p>
+              </div>
+              <ul className="space-y-3 mb-8 flex-1">
+                <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                  15 Cognitive Captures per month
+                </li>
+                <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                  Standard text and local timeline indexing
+                </li>
+                <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                  AI-powered summaries
+                </li>
+              </ul>
+              <div className="space-y-3 border-t border-zinc-50 pt-6">
+                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Create Free Account</p>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={freeEmail}
+                  onChange={e => setFreeEmail(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={freePassword}
+                  onChange={e => setFreePassword(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                />
+                <button
+                  onClick={async () => {
+                    if (!freeEmail || !freePassword) { toast.error('Please fill in all fields'); return }
+                    setAuthLoading(true)
+                    const ok = await store.signup(freeEmail, freePassword, '')
+                    setAuthLoading(false)
+                    if (ok) { setFreeEmail(''); setFreePassword(''); toast.success('Welcome to Aether!') }
+                    else toast.error('Signup failed. Try again.')
+                  }}
+                  disabled={authLoading}
+                  className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Get Started Free'}
+                </button>
+              </div>
+            </motion.div>
+
+            {/* Premium Tier Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.7 }}
+              className="relative rounded-2xl p-[2px] bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 shadow-xl"
+            >
+              <div className="bg-white rounded-2xl p-8 flex flex-col h-full">
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-sm font-medium text-purple-400 uppercase tracking-wider">Ascent</p>
+                    <span className="text-[10px] px-2 py-0.5 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-600 rounded-full font-medium">Premium</span>
+                  </div>
+                  <p className="text-4xl font-bold text-zinc-900">$5.99 <span className="text-base font-normal text-zinc-400">/ month</span></p>
+                </div>
+                <ul className="space-y-3 mb-8 flex-1">
+                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                    <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                    Infinite Cognitive Scale
+                  </li>
+                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                    <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                    Sub-second Groq voice processing
+                  </li>
+                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                    <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                    Deep AI insights &amp; synthesis
+                  </li>
+                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                    <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                    Autonomous 10-memory collection auto-clustering
+                  </li>
+                </ul>
+                <div className="space-y-3 border-t border-zinc-50 pt-6">
+                  <p className="text-xs font-medium text-purple-400 uppercase tracking-wider">Unlock Premium Sanctuary</p>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={premiumEmail}
+                    onChange={e => setPremiumEmail(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={premiumPassword}
+                    onChange={e => setPremiumPassword(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!premiumEmail || !premiumPassword) { toast.error('Please fill in all fields'); return }
+                      setAuthLoading(true)
+                      const ok = await store.signup(premiumEmail, premiumPassword, '')
+                      setAuthLoading(false)
+                      if (ok) { setPremiumEmail(''); setPremiumPassword(''); toast.success('Welcome to Aether Premium!') }
+                      else toast.error('Signup failed. Try again.')
+                    }}
+                    disabled={authLoading}
+                    className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all disabled:opacity-50"
+                  >
+                    {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Unlock Premium'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-zinc-100 py-8 px-6">
+          <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-zinc-400">
+            <span>&copy; {new Date().getFullYear()} Aether</span>
+            <span>Your second brain, always listening.</span>
+          </div>
+        </footer>
+
+        {/* Sign In Modal */}
+        <AnimatePresence>
+          {authModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+              onClick={() => setAuthModalOpen(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-lg font-bold text-zinc-900">Sign In</h2>
+                  <button onClick={() => setAuthModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={authEmail}
+                    onChange={e => setAuthEmail(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                  />
+                  <button
+                    onClick={() => handleAuth('login', authEmail, authPassword)}
+                    disabled={authLoading}
+                    className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Sign In'}
+                  </button>
+                  <p className="text-center text-xs text-zinc-400">
+                    Don&apos;t have an account?{' '}
+                    <button
+                      onClick={() => setAuthModalOpen(false)}
+                      className="text-purple-600 hover:underline"
+                    >
+                      Sign up below
+                    </button>
+                  </p>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    )
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ─── RENDER: STATE B — SANCTUARY DASHBOARD ──────────────────────
+  // ═════════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col min-h-0 flex-1">
-      {/* ── CAPTURE BAR ──────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <div className={cn(
-          'relative bg-white border border-black/[0.04] shadow-sm rounded-2xl p-2 transition-all duration-300',
-          isRecording && 'border-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.15)]',
-          showCaptureAnimation && 'animate-capture-fade-up'
-        )}>
-          {/* Image preview */}
-          {imagePreview && (
-            <div className="relative mx-2 mb-2 inline-block">
-              <img
-                src={imagePreview.url}
-                alt="Upload preview"
-                className="h-20 rounded-lg object-cover"
+    <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
+      {/* Dashboard Header */}
+      <header className="sticky top-0 z-40 bg-[#FAFAFA]/80 backdrop-blur-md border-b border-zinc-100">
+        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-sm font-bold text-zinc-900 tracking-tight">Aether</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAskAIOpen(!askAIOpen)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+                askAIOpen
+                  ? "bg-purple-50 text-purple-700 border border-purple-200"
+                  : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 border border-transparent"
+              )}
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              Ask Your Mind
+            </button>
+            {store.isAuthenticated && (
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {!store.isAuthenticated && (
+              <button
+                onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Sign In
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-5xl mx-auto w-full px-4 pt-6 pb-20">
+        {/* Capture Capsule Bar */}
+        <div className="relative mb-8">
+          <div className="absolute -inset-4 bg-gradient-to-r from-purple-500 to-indigo-500 blur-2xl opacity-15 rounded-3xl pointer-events-none" />
+          <div className="relative bg-white rounded-2xl border border-zinc-100 shadow-sm p-3">
+            {imagePreviewUrl && (
+              <div className="mb-3 flex items-center gap-2">
+                <img src={imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-zinc-100" />
+                <button
+                  onClick={() => { setSelectedImage(null); setImagePreviewUrl(null) }}
+                  className="text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
               />
               <button
-                onClick={removeImage}
-                className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs shadow-sm hover:bg-gray-800"
+                onClick={() => fileInputRef.current?.click()}
+                className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
+                title="Attach image"
               >
-                <X className="size-3" />
+                <ImageIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                className={cn(
+                  "shrink-0 p-2 rounded-lg transition-all",
+                  isRecording
+                    ? "text-red-500 bg-red-50 animate-pulse"
+                    : "text-zinc-400 hover:text-purple-600 hover:bg-purple-50"
+                )}
+                title={isRecording ? "Stop recording" : "Record voice"}
+              >
+                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+              <input
+                type="text"
+                value={captureText}
+                onChange={e => setCaptureText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCapture() } }}
+                placeholder={isRecording ? "Recording..." : "Capture a thought, paste a link, or type a note..."}
+                className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none placeholder:text-zinc-300 text-zinc-800"
+                disabled={isRecording || isCapturing}
+              />
+              <button
+                onClick={handleCapture}
+                disabled={isCapturing || (!captureText.trim() && !selectedImage && !isRecording)}
+                className={cn(
+                  "shrink-0 p-2 rounded-lg transition-all",
+                  isCapturing
+                    ? "bg-purple-100 text-purple-400"
+                    : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                )}
+              >
+                {isCapturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            {/* Mic button */}
-            <button
-              onClick={handleMicClick}
-              disabled={isSaving || isTranscribing}
-              className={cn(
-                'size-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
-                isRecording
-                  ? 'bg-purple-500 text-white shadow-[0_0_16px_rgba(168,85,247,0.3)]'
-                  : 'bg-gray-50 text-gray-400 hover:bg-purple-50 hover:text-purple-500'
-              )}
-            >
-              {isTranscribing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : isRecording ? (
-                <MicOff className="size-4" />
-              ) : (
-                <Mic className="size-4" />
-              )}
-            </button>
-
-            {/* Text input */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={captureText}
-              onChange={(e) => setCaptureText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isRecording ? 'Recording...' : isTranscribing ? 'Transcribing...' : 'Capture a thought, paste a link, or type anything...'}
-              disabled={isSaving || isTranscribing}
-              className="flex-1 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none min-w-0 disabled:opacity-50"
-            />
-
-            {/* Image upload button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isSaving || isTranscribing}
-              className="size-10 rounded-xl flex items-center justify-center shrink-0 bg-gray-50 text-gray-400 hover:bg-purple-50 hover:text-purple-500 transition-all duration-200 disabled:opacity-50"
-            >
-              <ImageIcon className="size-4" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-
-            {/* Send button */}
-            <button
-              onClick={handleCaptureSubmit}
-              disabled={isSaving || isTranscribing || (!captureText.trim() && !imagePreview)}
-              className={cn(
-                'size-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
-                (captureText.trim() || imagePreview)
-                  ? 'bg-gray-900 hover:bg-gray-800 text-white'
-                  : 'bg-gray-100 text-gray-400'
-              )}
-            >
-              {isSaving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-            </button>
+            {isRecording && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                Recording... tap the mic to stop
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Recording indicator */}
-        {isRecording && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-2 flex items-center gap-2 text-xs text-purple-600"
-          >
-            <span className="size-2 rounded-full bg-purple-500 animate-pulse" />
-            Recording... tap mic to stop
-          </motion.div>
-        )}
-        {isTranscribing && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-2 flex items-center gap-2 text-xs text-purple-600"
-          >
-            <Loader2 className="size-3 animate-spin" />
-            Transcribing audio...
-          </motion.div>
-        )}
-      </div>
+        {/* Ask Your Mind Panel */}
+        <AnimatePresence>
+          {askAIOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-8 overflow-hidden"
+            >
+              <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Brain className="w-4 h-4 text-purple-500" />
+                  <h3 className="text-sm font-semibold text-zinc-800">Ask Your Mind</h3>
+                </div>
+                {askAIResponse && (
+                  <div className="mb-4 p-4 bg-zinc-50 rounded-xl text-sm text-zinc-700 leading-relaxed max-h-64 overflow-y-auto whitespace-pre-wrap">
+                    {askAIResponse}
+                    <div ref={chatEndRef} />
+                  </div>
+                )}
+                {askAILoading && !askAIResponse && (
+                  <div className="mb-4 flex items-center gap-2 text-sm text-zinc-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Searching your memories...
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={askAIQuery}
+                    onChange={e => setAskAIQuery(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAskAI() }}
+                    placeholder="What was that thing I mentioned about..."
+                    className="flex-1 px-3 py-2 text-sm bg-zinc-50 border border-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300"
+                  />
+                  <button
+                    onClick={handleAskAI}
+                    disabled={askAILoading || !askAIQuery.trim()}
+                    className="shrink-0 p-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Search className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* ── MEMORY TIMELINE ──────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0">
-        {isLoading && sortedMemories.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-            <Loader2 className="size-6 animate-spin mb-3" />
-            <p className="text-sm">Loading memories...</p>
+        {/* Filter Bar */}
+        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+          {(['all', 'text', 'voice', 'link', 'image'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => store.setFilterType(type)}
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded-full transition-all shrink-0",
+                store.filterType === type
+                  ? "bg-zinc-900 text-white"
+                  : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
+              )}
+            >
+              {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1)}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-300" />
+            <input
+              type="text"
+              value={store.searchQuery}
+              onChange={e => store.setSearchQuery(e.target.value)}
+              placeholder="Search memories..."
+              className="pl-8 pr-3 py-1.5 text-xs bg-zinc-50 border border-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300 w-40"
+            />
           </div>
-        ) : sortedMemories.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-            <Brain className="size-8 mb-3 text-gray-300" />
-            <p className="text-sm font-medium text-gray-500 mb-1">No memories yet</p>
-            <p className="text-xs text-gray-400">Capture your first thought above</p>
+        </div>
+
+        {/* Timeline Feed */}
+        {store.isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
+          </div>
+        ) : filteredMemories.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-zinc-100 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-zinc-300" />
+            </div>
+            <p className="text-sm text-zinc-400 font-medium">No memories yet</p>
+            <p className="text-xs text-zinc-300 mt-1">Capture your first thought above</p>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
-            <AnimatePresence mode="popLayout">
-              {sortedMemories.map((memory) => (
-                <MemoryCard
-                  key={memory.id}
-                  memory={memory}
-                  onClick={() => openDrawer(memory)}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
+          <div className="space-y-3">
+            {filteredMemories.map(memory => {
+              const isNew = newMemoryIds.has(memory.id) && !appliedIds.has(memory.id)
+              const isApplied = appliedIds.has(memory.id)
 
-      {/* ── INSPECTION DRAWER ────────────────────────────────────────── */}
-      <InspectionDrawer
-        memory={selectedMemory}
-        open={drawerOpen}
-        onClose={closeDrawer}
-        onPurge={handlePurge}
-        onDownload={handleDownload}
-      />
-
-      {/* ── MOBILE AUTH DRAWER ───────────────────────────────────────── */}
-      {isMobile && (
-        <MobileAuthDrawer
-          open={showMobileAuth}
-          onClose={() => setShowMobileAuth(false)}
-        />
-      )}
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── APP SHELL (NAVIGATION) ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-type AppView = 'dashboard' | 'ask' | 'collections' | 'settings'
-
-const navItems: { view: AppView; icon: React.ElementType; label: string }[] = [
-  { view: 'dashboard', icon: HomeIcon, label: 'Home' },
-  { view: 'ask', icon: Search, label: 'Ask' },
-  { view: 'collections', icon: Layers, label: 'Collections' },
-  { view: 'settings', icon: Settings, label: 'Settings' },
-]
-
-function AppShell({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, logout, setShowAuthModal } = useAetherStore()
-  const isMobile = useIsMobile()
-  const [currentView, setCurrentView] = useState<AppView>('dashboard')
-
-  const handleSignOut = async () => {
-    await logout()
-    toast.success('Signed out')
-  }
-
-  const views: Record<AppView, React.ReactNode> = {
-    dashboard: <DashboardView />,
-    ask: <SimpleAskView />,
-    collections: <SimpleCollectionsView />,
-    settings: <SimpleSettingsView onSignOut={handleSignOut} isAuthenticated={isAuthenticated} onSignIn={() => setShowAuthModal(true)} />,
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col bg-[#F9FAFB] relative overflow-hidden">
-      <div className="relative z-10 flex flex-1 min-h-0">
-        {/* Desktop Sidebar */}
-        {!isMobile && (
-          <aside className="h-screen fixed left-0 top-0 z-40 w-14 flex flex-col bg-white/50 backdrop-blur-xl border-r border-black/[0.03]">
-            <div className="flex items-center justify-center h-14 shrink-0 border-b border-black/[0.03]">
-              <div className="size-9 rounded-xl bg-zinc-900 flex items-center justify-center">
-                <Brain className="size-5 text-white" />
-              </div>
-            </div>
-
-            <nav className="flex-1 py-3 flex flex-col items-center gap-1 px-0">
-              {navItems.map((item) => {
-                const isActive = currentView === item.view
-                const Icon = item.icon
-                return (
-                  <button
-                    key={item.view}
-                    onClick={() => setCurrentView(item.view)}
-                    className={cn(
-                      'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
-                      isActive
-                        ? 'bg-purple-50 text-purple-600'
-                        : 'text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60'
-                    )}
-                    title={item.label}
-                  >
-                    <Icon className="size-5" />
-                  </button>
-                )
-              })}
-            </nav>
-
-            <div className="py-3 flex flex-col items-center shrink-0 border-t border-black/[0.03]">
-              {isAuthenticated ? (
-                <button
-                  onClick={handleSignOut}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60 transition-all duration-200"
-                  title="Sign Out"
-                >
-                  <LogOut className="size-5" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60 transition-all duration-200"
-                  title="Sign In"
-                >
-                  <LogIn className="size-5" />
-                </button>
-              )}
-            </div>
-          </aside>
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 flex flex-col min-h-0 transition-all duration-300 md:ml-14">
-          {/* Mobile header */}
-          {isMobile && (
-            <div className="flex items-center justify-between px-4 h-12 shrink-0 bg-white/50 backdrop-blur-xl border-b border-black/[0.03]">
-              <div className="size-8 rounded-lg bg-zinc-900 flex items-center justify-center">
-                <Brain className="size-4 text-white" />
-              </div>
-              <div className="flex items-center gap-2">
-                {isAuthenticated ? (
-                  <button
-                    onClick={handleSignOut}
-                    className="size-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700"
-                  >
-                    <LogOut className="size-4" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowAuthModal(true)}
-                    className="size-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700"
-                  >
-                    <LogIn className="size-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex-1 overflow-y-auto">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentView}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2, ease: 'easeInOut' }}
-                className="p-4 md:p-6 lg:p-10"
-              >
-                {views[currentView]}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </main>
-      </div>
-
-      {/* Mobile Bottom Nav */}
-      {isMobile && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/50 backdrop-blur-xl border-t border-black/[0.03]">
-          <div className="flex items-center justify-around h-14 px-2">
-            {navItems.map((item) => {
-              const isActive = currentView === item.view
-              const Icon = item.icon
               return (
-                <button
-                  key={item.view}
-                  onClick={() => setCurrentView(item.view)}
-                  className={cn(
-                    'flex items-center justify-center w-12 h-10 rounded-xl transition-all min-w-[44px] min-h-[44px]',
-                    isActive ? 'text-purple-600' : 'text-zinc-400'
+                <div key={memory.id}>
+                  {/* Memory Card */}
+                  <motion.div
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-xl border border-zinc-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+                    onClick={() => { setDrawerMemory(memory); setDrawerOpen(true) }}
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={cn(
+                          "shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                          memory.type === 'voice' ? 'bg-red-50 text-red-500' :
+                          memory.type === 'link' ? 'bg-blue-50 text-blue-500' :
+                          memory.type === 'image' ? 'bg-green-50 text-green-500' :
+                          'bg-purple-50 text-purple-500'
+                        )}>
+                          {memory.type === 'voice' ? <Volume2 className="w-4 h-4" /> :
+                           memory.type === 'link' ? <Link2 className="w-4 h-4" /> :
+                           memory.type === 'image' ? <ImageIcon className="w-4 h-4" /> :
+                           <FileText className="w-4 h-4" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-zinc-800 truncate">
+                              {memory.title || 'Untitled'}
+                            </h3>
+                            {isApplied && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />}
+                          </div>
+                          {memory.summary && (
+                            <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{memory.summary}</p>
+                          )}
+                          {!memory.summary && memory.content && (
+                            <p className="text-xs text-zinc-400 mt-0.5 line-clamp-2">{memory.content}</p>
+                          )}
+                          <div className="flex items-center gap-2 mt-2">
+                            {memory.tags.slice(0, 3).map(tag => (
+                              <span key={tag} className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">
+                                {tag}
+                              </span>
+                            ))}
+                            <span className="text-[10px] text-zinc-300 ml-auto flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                        </div>
+                        <Eye className="w-4 h-4 text-zinc-200 group-hover:text-zinc-400 transition-colors shrink-0 mt-1" />
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  {/* AI Suggestion Box (Saner-style) */}
+                  {isNew && (memory.summary || memory.tags.length > 0) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="ml-8 mt-1 overflow-hidden"
+                    >
+                      <div className="bg-zinc-50/80 rounded-xl border border-zinc-100/60 p-3">
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Sparkles className="w-3 h-3 text-purple-400" />
+                          <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">AI Suggestion</span>
+                        </div>
+                        {memory.title && (
+                          <p className="text-xs font-medium text-zinc-600 mb-1.5">{memory.title}</p>
+                        )}
+                        {memory.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {memory.tags.map(tag => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-white text-zinc-500 rounded border border-zinc-100">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleApplySuggestion(memory.id) }}
+                          className="flex items-center gap-1.5 text-[11px] font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                        >
+                          <Check className="w-3 h-3" />
+                          Apply &amp; Sync
+                        </button>
+                      </div>
+                    </motion.div>
                   )}
-                >
-                  <Icon className="size-5" />
-                </button>
+                </div>
               )
             })}
           </div>
-          <div className="h-[env(safe-area-inset-bottom)]" />
-        </nav>
-      )}
-
-      {/* Global Auth Drawer (for non-mobile navigation sign-in) */}
-      <GlobalAuthDrawer />
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── GLOBAL AUTH DRAWER ──────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function GlobalAuthDrawer() {
-  const { showAuthModal, setShowAuthModal, login, signup } = useAetherStore()
-  const isMobile = useIsMobile()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
-  const [isLoading, setIsLoading] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-
-  const resetForm = () => {
-    setEmail('')
-    setPassword('')
-    setName('')
-    setIsLoading(false)
-  }
-
-  const handleClose = () => {
-    setShowAuthModal(false)
-    setTimeout(resetForm, 200)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim() || !password.trim()) {
-      toast.error('Please fill in email and password')
-      return
-    }
-    if (mode === 'signup' && password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      const success = mode === 'login'
-        ? await login(email.trim(), password)
-        : await signup(email.trim(), password, name.trim())
-
-      if (success) {
-        toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
-        handleClose()
-      } else {
-        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
-      }
-    } catch {
-      toast.error('Something went wrong. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const formContent = (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {mode === 'signup' && (
-        <input
-          type="text"
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={isLoading}
-          className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-        />
-      )}
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        disabled={isLoading}
-        autoFocus
-        className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        disabled={isLoading}
-        className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
-      />
-      <button
-        type="submit"
-        disabled={isLoading}
-        className={cn(
-          'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-10 font-medium text-sm transition-colors',
-          'disabled:opacity-50 disabled:cursor-not-allowed'
         )}
-      >
-        {isLoading ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          mode === 'login' ? 'Sign In' : 'Create Account'
+      </main>
+
+      {/* Dashboard Footer */}
+      <footer className="border-t border-zinc-100 py-4 px-6 mt-auto">
+        <div className="max-w-5xl mx-auto flex items-center justify-between text-[10px] text-zinc-300">
+          <span>&copy; {new Date().getFullYear()} Aether</span>
+          <span>{store.memories.length} memories</span>
+        </div>
+      </footer>
+
+      {/* ─── Inspection Drawer ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {drawerOpen && drawerMemory && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.3 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black"
+              onClick={() => { setDrawerOpen(false); setDrawerMemory(null) }}
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
+            >
+              <div className="sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between p-4 border-b border-zinc-100">
+                <h2 className="text-sm font-bold text-zinc-900">Memory Detail</h2>
+                <button
+                  onClick={() => { setDrawerOpen(false); setDrawerMemory(null) }}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-6">
+                {/* Title & Type */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={cn(
+                      "px-2 py-0.5 text-[10px] font-medium rounded-full",
+                      drawerMemory.type === 'voice' ? 'bg-red-50 text-red-600' :
+                      drawerMemory.type === 'link' ? 'bg-blue-50 text-blue-600' :
+                      drawerMemory.type === 'image' ? 'bg-green-50 text-green-600' :
+                      'bg-purple-50 text-purple-600'
+                    )}>
+                      {drawerMemory.type}
+                    </span>
+                    <span className="text-[10px] text-zinc-300">
+                      {formatDistanceToNow(new Date(drawerMemory.createdAt), { addSuffix: true })}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-zinc-900">
+                    {drawerMemory.title || 'Untitled'}
+                  </h3>
+                </div>
+
+                {/* AI Summary */}
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="text-xs font-semibold text-zinc-500">AI Summary</span>
+                  </div>
+                  <p className="text-sm text-zinc-700 leading-relaxed bg-purple-50/50 rounded-xl p-4 border border-purple-100/50">
+                    {drawerMemory.summary || 'Summary not yet generated...'}
+                  </p>
+                </div>
+
+                {/* Raw Content */}
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="text-xs font-semibold text-zinc-500">Raw Content</span>
+                  </div>
+                  {drawerMemory.imageUrl ? (
+                    <img
+                      src={drawerMemory.imageUrl}
+                      alt="Captured image"
+                      className="w-full rounded-xl border border-zinc-100"
+                    />
+                  ) : (
+                    <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                      {drawerMemory.content || 'No content'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Deep Insight */}
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Brain className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="text-xs font-semibold text-zinc-500">Deep Insight</span>
+                  </div>
+                  <p className="text-sm text-zinc-700 leading-relaxed bg-indigo-50/50 rounded-xl p-4 border border-indigo-100/50">
+                    {drawerMemory.deepInsight || 'Deep insight not yet generated...'}
+                  </p>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <span className="text-xs font-semibold text-zinc-500 mb-2 block">Tags</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {drawerMemory.tags.length > 0 ? drawerMemory.tags.map(tag => (
+                      <span key={tag} className="text-xs px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-full">
+                        {tag}
+                      </span>
+                    )) : (
+                      <span className="text-xs text-zinc-300">No tags</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 pt-4 border-t border-zinc-100">
+                  <button
+                    onClick={() => handleDownloadMarkdown(drawerMemory)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download .md
+                  </button>
+                  <button
+                    onClick={() => handleDeleteMemory(drawerMemory!.id)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Purge Memory
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
         )}
-      </button>
-    </form>
-  )
+      </AnimatePresence>
 
-  const modeSwitch = (
-    <div className="mt-6 text-center">
-      <button
-        onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-        className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
-        disabled={isLoading}
-      >
-        {mode === 'login' ? 'Sign up' : 'Sign in'}
-      </button>
-    </div>
-  )
-
-  const closeButton = (
-    <button
-      onClick={handleClose}
-      className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
-    >
-      <X className="size-4" />
-    </button>
-  )
-
-  return (
-    <AnimatePresence>
-      {showAuthModal && (
-        <>
+      {/* ─── Auth Modal (Mobile / Dashboard) ────────────────────────── */}
+      <AnimatePresence>
+        {(authModalOpen || store.showAuthModal) && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
-            onClick={handleClose}
-          />
-
-          {isMobile ? (
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            onClick={() => { setAuthModalOpen(false); store.setShowAuthModal(false) }}
+          >
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
-              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4"
+              onClick={e => e.stopPropagation()}
             >
-              <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
-              <div className="flex justify-end mb-2">{closeButton}</div>
-              {formContent}
-              {modeSwitch}
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
-              onClick={handleClose}
-            >
-              <div
-                className="relative w-full max-w-sm bg-white border border-black/[0.04] shadow-[0_8px_40px_rgb(0,0,0,0.03)] rounded-2xl p-12"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="absolute top-4 right-4">{closeButton}</div>
-                {formContent}
-                {modeSwitch}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAuthMode('login')}
+                    className={cn(
+                      "text-sm font-semibold pb-1 transition-colors",
+                      authMode === 'login' ? "text-zinc-900 border-b-2 border-purple-500" : "text-zinc-400"
+                    )}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => setAuthMode('signup')}
+                    className={cn(
+                      "text-sm font-semibold pb-1 transition-colors",
+                      authMode === 'signup' ? "text-zinc-900 border-b-2 border-purple-500" : "text-zinc-400"
+                    )}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+                <button
+                  onClick={() => { setAuthModalOpen(false); store.setShowAuthModal(false) }}
+                  className="text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {authMode === 'signup' && (
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={authName}
+                    onChange={e => setAuthName(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                  />
+                )}
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      handleAuth(authMode, authEmail, authPassword, authName)
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                />
+                <button
+                  onClick={() => handleAuth(authMode, authEmail, authPassword, authName)}
+                  disabled={authLoading}
+                  className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all disabled:opacity-50"
+                >
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : authMode === 'login' ? 'Sign In' : 'Create Account'}
+                </button>
               </div>
             </motion.div>
-          )}
-        </>
-      )}
-    </AnimatePresence>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── SIMPLE VIEWS (Ask, Collections, Settings) ──────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-function SimpleAskView() {
-  const { memories } = useAetherStore()
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-      <Search className="size-8 mb-3 text-gray-300" />
-      <p className="text-sm font-medium text-gray-500 mb-1">Ask Aether</p>
-      <p className="text-xs text-gray-400">Search across {memories.length} memories</p>
-    </div>
-  )
-}
-
-function SimpleCollectionsView() {
-  const { collections } = useAetherStore()
-  return (
-    <div>
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Collections</h2>
-      {collections.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-          <Layers className="size-8 mb-3 text-gray-300" />
-          <p className="text-sm font-medium text-gray-500 mb-1">No collections yet</p>
-          <p className="text-xs text-gray-400">Collections auto-create when 10+ memories share tags</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {collections.map((c) => (
-            <div
-              key={c.id}
-              className="bg-white border border-black/[0.04] rounded-xl p-4 hover:shadow-sm transition-shadow"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">{c.icon}</span>
-                <span className="text-sm font-medium text-gray-900 truncate">{c.name}</span>
-              </div>
-              <p className="text-xs text-gray-400">{c.memoryCount} memories</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SimpleSettingsView({
-  onSignOut,
-  isAuthenticated,
-  onSignIn,
-}: {
-  onSignOut: () => void
-  isAuthenticated: boolean
-  onSignIn: () => void
-}) {
-  const { user } = useAetherStore()
-  return (
-    <div>
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Settings</h2>
-      <div className="bg-white border border-black/[0.04] rounded-xl p-6 space-y-4">
-        {isAuthenticated && user ? (
-          <>
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-semibold text-sm">
-                {(user.name || user.email || 'U').charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">{user.name || 'User'}</p>
-                <p className="text-xs text-gray-400">{user.email}</p>
-              </div>
-            </div>
-            <button
-              onClick={onSignOut}
-              className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl h-10 font-medium text-sm transition-colors"
-            >
-              <LogOut className="size-4" />
-              Sign Out
-            </button>
-          </>
-        ) : (
-          <div>
-            <p className="text-sm text-gray-500 mb-3">Sign in to sync your memories across devices</p>
-            <button
-              onClick={onSignIn}
-              className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-10 font-medium text-sm transition-colors"
-            >
-              <LogIn className="size-4" />
-              Sign In
-            </button>
-          </div>
+          </motion.div>
         )}
-      </div>
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ─── MAIN HOME COMPONENT ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-export default function Home() {
-  const { checkSession, fetchMemories, fetchCollections, isAuthenticated } = useAetherStore()
-  const isMobile = useIsMobile()
-  const [showDashboard, setShowDashboard] = useState(false)
-
-  useEffect(() => {
-    checkSession()
-    fetchMemories()
-    fetchCollections()
-  }, [checkSession, fetchMemories, fetchCollections])
-
-  // On mobile, always show dashboard. On desktop, show dashboard if authenticated or user chose to skip.
-  const shouldShowDashboard = isMobile || isAuthenticated || showDashboard
-
-  return (
-    <div className="min-h-screen bg-[#F9FAFB]">
-      {shouldShowDashboard ? (
-        <AppShell>
-          <DashboardView />
-        </AppShell>
-      ) : (
-        <LandingPage onSkipToDashboard={() => setShowDashboard(true)} />
-      )}
+      </AnimatePresence>
     </div>
   )
 }

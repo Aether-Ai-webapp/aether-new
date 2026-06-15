@@ -1,0 +1,2002 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+     6→     6→import { formatDistanceToNow } from 'date-fns'
+     7→     7→import {
+     8→     8→  Sparkles,
+     9→     9→  Brain,
+    10→    10→  Mic,
+    11→    11→  MicOff,
+    12→    12→  Send,
+    13→    13→  X,
+    14→    14→  ArrowRight,
+    15→    15→  Check,
+    16→    16→  Zap,
+    17→    17→  Volume2,
+    18→    18→  Layers,
+    19→    19→  Loader2,
+    20→    20→  Link2,
+    21→    21→  FileText,
+    22→    22→  CheckCircle2,
+    23→    23→  Clock,
+    24→    24→  Image as ImageIcon,
+    25→    25→  ChevronRight,
+    26→    26→  Download,
+    27→    27→  Trash2,
+    28→    28→  Eye,
+    29→    29→  LogOut,
+    30→    30→  LogIn,
+    31→    31→  Home as HomeIcon,
+    32→    32→  Search,
+    33→    33→  Settings,
+    34→    34→} from 'lucide-react'
+    35→    35→import { cn } from '@/lib/utils'
+    36→    36→import { toast } from 'sonner'
+    37→    37→
+    38→    38→// ═══════════════════════════════════════════════════════════════════════
+    39→    39→// ─── MOBILE DETECTION HOOK ───────────────────────────────────────────
+    40→    40→// ═══════════════════════════════════════════════════════════════════════
+    41→    41→
+    42→    42→function useIsMobile() {
+    43→    43→  const [isMobile, setIsMobile] = useState(false)
+    44→    44→  useEffect(() => {
+    45→    45→    const check = () => setIsMobile(window.innerWidth < 768)
+    46→    46→    check()
+    47→    47→    window.addEventListener('resize', check)
+    48→    48→    return () => window.removeEventListener('resize', check)
+    49→    49→  }, [])
+    50→    50→  return isMobile
+    51→    51→}
+    52→    52→
+    53→    53→// ═══════════════════════════════════════════════════════════════════════
+    54→    54→// ─── HELPERS ─────────────────────────────────────────────────────────
+    55→    55→// ═══════════════════════════════════════════════════════════════════════
+    56→    56→
+    57→    57→function detectContentType(text: string): 'link' | 'task' | 'note' {
+    58→    58→  const lower = text.toLowerCase()
+    59→    59→  if (/https?:\/\//.test(lower) || /\bwww\./.test(lower)) return 'link'
+    60→    60→  if (/\b(todo|remind|need to|buy|must)\b/.test(lower)) return 'task'
+    61→    61→  return 'note'
+    62→    62→}
+    63→    63→
+    64→    64→function mapToMemoryType(detected: 'link' | 'task' | 'note'): MemoryType {
+    65→    65→  if (detected === 'link') return 'link'
+    66→    66→  return 'text'
+    67→    67→}
+    68→    68→
+    69→    69→const typeIconMap: Record<string, React.ElementType> = {
+    70→    70→  link: Link2,
+    71→    71→  task: CheckCircle2,
+    72→    72→  note: FileText,
+    73→    73→  voice: Volume2,
+    74→    74→  image: ImageIcon,
+    75→    75→}
+    76→    76→
+    77→    77→function downloadMemoryAsMarkdown(memory: Memory) {
+    78→    78→  const lines: string[] = []
+    79→    79→  lines.push(`# ${memory.title || 'Untitled Memory'}`)
+    80→    80→  lines.push('')
+    81→    81→  lines.push(`**Type:** ${memory.type}`)
+    82→    82→  lines.push(`**Created:** ${new Date(memory.createdAt).toLocaleString()}`)
+    83→    83→  if (memory.tags.length > 0) {
+    84→    84→    lines.push(`**Tags:** ${memory.tags.join(', ')}`)
+    85→    85→  }
+    86→    86→  if (memory.sourceUrl) {
+    87→    87→    lines.push(`**Source:** ${memory.sourceUrl}`)
+    88→    88→  }
+    89→    89→  lines.push('')
+    90→    90→  lines.push('---')
+    91→    91→  lines.push('')
+    92→    92→
+    93→    93→  if (memory.summary) {
+    94→    94→    lines.push('## AI Summary')
+    95→    95→    lines.push('')
+    96→    96→    lines.push(memory.summary)
+    97→    97→    lines.push('')
+    98→    98→  }
+    99→    99→
+   100→   100→  if (memory.deepInsight || memory.recap) {
+   101→   101→    lines.push('## Cognitive Insight')
+   102→   102→    lines.push('')
+   103→   103→    lines.push(memory.deepInsight || memory.recap || '')
+   104→   104→    lines.push('')
+   105→   105→  }
+   106→   106→
+   107→   107→  lines.push('## Original Content')
+   108→   108→  lines.push('')
+   109→   109→  lines.push(memory.content)
+   110→   110→  lines.push('')
+   111→   111→
+   112→   112→  const markdown = lines.join('\n')
+   113→   113→  const blob = new Blob([markdown], { type: 'text/markdown' })
+   114→   114→  const url = URL.createObjectURL(blob)
+   115→   115→  const a = document.createElement('a')
+   116→   116→  a.href = url
+   117→   117→  a.download = `${(memory.title || 'memory').slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}.md`
+   118→   118→  document.body.appendChild(a)
+   119→   119→  a.click()
+   120→   120→  document.body.removeChild(a)
+   121→   121→  URL.revokeObjectURL(url)
+   122→   122→}
+   123→   123→
+   124→   124→// ═══════════════════════════════════════════════════════════════════════
+   125→   125→// ─── ANIMATION VARIANTS ──────────────────────────────────────────────
+   126→   126→// ═══════════════════════════════════════════════════════════════════════
+   127→   127→
+   128→   128→const staggerContainer = {
+   129→   129→  hidden: {},
+   130→   130→  visible: {
+   131→   131→    transition: { staggerChildren: 0.12, delayChildren: 0.2 },
+   132→   132→  },
+   133→   133→}
+   134→   134→
+   135→   135→const staggerChild = {
+   136→   136→  hidden: { opacity: 0, y: 16 },
+   137→   137→  visible: {
+   138→   138→    opacity: 1,
+   139→   139→    y: 0,
+   140→   140→    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+   141→   141→  },
+   142→   142→}
+   143→   143→
+   144→   144→const scaleIn = {
+   145→   145→  hidden: { opacity: 0, scale: 0.96 },
+   146→   146→  visible: {
+   147→   147→    opacity: 1,
+   148→   148→    scale: 1,
+   149→   149→    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+   150→   150→  },
+   151→   151→}
+   152→   152→
+   153→   153→// ═══════════════════════════════════════════════════════════════════════
+   154→   154→// ─── TYPING ANIMATION DATA ───────────────────────────────────────────
+   155→   155→// ═══════════════════════════════════════════════════════════════════════
+   156→   156→
+   157→   157→const DEMO_THOUGHTS = [
+   158→   158→  'The best products are the ones that disappear into your workflow...',
+   159→   159→  'What if memory was as fluid as thought itself?',
+   160→   160→  'Every great idea starts as a fragment before it becomes a system...',
+   161→   161→]
+   162→   162→
+   163→   163→const DEMO_SUMMARIES = [
+   164→   164→  'Products that seamlessly integrate into existing habits become invisible infrastructure. The highest compliment for a tool is when users forget it is there.',
+   165→   165→  'Memory systems should mirror the associative, non-linear nature of human cognition rather than forcing rigid hierarchies. Fluidity enables recall.',
+   166→   166→  'Innovation follows a consistent arc: scattered observations crystallize into coherent frameworks. The fragment is the seed of every breakthrough.',
+   167→   167→]
+   168→   168→
+   169→   169→// ═══════════════════════════════════════════════════════════════════════
+   170→   170→// ─── INTERACTIVE DEMO COMPONENT ──────────────────────────────────────
+   171→   171→// ═══════════════════════════════════════════════════════════════════════
+   172→   172→
+   173→   173→function InteractiveDemo() {
+   174→   174→  const [phase, setPhase] = useState<'typing' | 'morphing' | 'result'>('typing')
+   175→   175→  const [displayText, setDisplayText] = useState('')
+   176→   176→  const [currentThoughtIdx, setCurrentThoughtIdx] = useState(0)
+   177→   177→  const [showSummary, setShowSummary] = useState(false)
+   178→   178→  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   179→   179→
+   180→   180→  const currentThought = DEMO_THOUGHTS[currentThoughtIdx]
+   181→   181→  const currentSummary = DEMO_SUMMARIES[currentThoughtIdx]
+   182→   182→
+   183→   183→  const runCycle = useCallback(() => {
+   184→   184→    setPhase('typing')
+   185→   185→    setDisplayText('')
+   186→   186→    setShowSummary(false)
+   187→   187→
+   188→   188→    let charIndex = 0
+   189→   189→    const typeInterval = setInterval(() => {
+   190→   190→      if (charIndex < currentThought.length) {
+   191→   191→        setDisplayText(currentThought.slice(0, charIndex + 1))
+   192→   192→        charIndex++
+   193→   193→      } else {
+   194→   194→        clearInterval(typeInterval)
+   195→   195→        timerRef.current = setTimeout(() => {
+   196→   196→          setPhase('morphing')
+   197→   197→          timerRef.current = setTimeout(() => {
+   198→   198→            setPhase('result')
+   199→   199→            setShowSummary(true)
+   200→   200→            timerRef.current = setTimeout(() => {
+   201→   201→              setCurrentThoughtIdx((prev) => (prev + 1) % DEMO_THOUGHTS.length)
+   202→   202→            }, 4000)
+   203→   203→          }, 800)
+   204→   204→        }, 1200)
+   205→   205→      }
+   206→   206→    }, 45)
+   207→   207→
+   208→   208→    return () => {
+   209→   209→      clearInterval(typeInterval)
+   210→   210→      if (timerRef.current) clearTimeout(timerRef.current)
+   211→   211→    }
+   212→   212→  }, [currentThought])
+   213→   213→
+   214→   214→  useEffect(() => {
+   215→   215→    const cleanup = runCycle()
+   216→   216→    return cleanup
+   217→   217→  }, [currentThoughtIdx, runCycle])
+   218→   218→
+   219→   219→  useEffect(() => {
+   220→   220→    return () => {
+   221→   221→      if (timerRef.current) clearTimeout(timerRef.current)
+   222→   222→    }
+   223→   223→  }, [])
+   224→   224→
+   225→   225→  return (
+   226→   226→    <div className="w-full max-w-xl mx-auto">
+   227→   227→      <motion.div
+   228→   228→        variants={scaleIn}
+   229→   229→        initial="hidden"
+   230→   230→        whileInView="visible"
+   231→   231→        viewport={{ once: true, margin: '-60px' }}
+   232→   232→        className="relative bg-white rounded-2xl border border-black/[0.06] shadow-[0_8px_40px_rgba(0,0,0,0.06)] overflow-hidden"
+   233→   233→      >
+   234→   234→        <div className="flex items-center gap-2 px-4 py-3 border-b border-black/[0.04]">
+   235→   235→          <div className="flex gap-1.5">
+   236→   236→            <div className="size-2.5 rounded-full bg-red-400/70" />
+   237→   237→            <div className="size-2.5 rounded-full bg-yellow-400/70" />
+   238→   238→            <div className="size-2.5 rounded-full bg-green-400/70" />
+   239→   239→          </div>
+   240→   240→          <div className="flex-1 text-center">
+   241→   241→            <span className="text-[11px] text-gray-300 font-medium tracking-wide">AETHER</span>
+   242→   242→          </div>
+   243→   243→          <div className="w-[54px]" />
+   244→   244→        </div>
+   245→   245→
+   246→   246→        <div className="p-5 min-h-[220px] flex flex-col">
+   247→   247→          <div className="bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2 mb-4">
+   248→   248→            <div className="flex items-center gap-2">
+   249→   249→              <div className="size-8 rounded-xl flex items-center justify-center text-gray-300">
+   250→   250→                <Mic className="size-4" />
+   251→   251→              </div>
+   252→   252→              <div className="flex-1 text-sm text-gray-800 min-h-[28px] flex items-center">
+   253→   253→                {displayText}
+   254→   254→                {phase === 'typing' && (
+   255→   255→                  <motion.span
+   256→   256→                    animate={{ opacity: [1, 0] }}
+   257→   257→                    transition={{ duration: 0.6, repeat: Infinity }}
+   258→   258→                    className="inline-block w-[2px] h-4 bg-purple-500 ml-0.5"
+   259→   259→                  />
+   260→   260→                )}
+   261→   261→              </div>
+   262→   262→              <div className={cn(
+   263→   263→                'size-8 rounded-xl flex items-center justify-center transition-all',
+   264→   264→                displayText ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
+   265→   265→              )}>
+   266→   266→                <Send className="size-3.5" />
+   267→   267→              </div>
+   268→   268→            </div>
+   269→   269→          </div>
+   270→   270→
+   271→   271→          <AnimatePresence mode="wait">
+   272→   272→            {phase === 'result' && showSummary && (
+   273→   273→              <motion.div
+   274→   274→                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+   275→   275→                animate={{ opacity: 1, y: 0, scale: 1 }}
+   276→   276→                exit={{ opacity: 0, y: -8 }}
+   277→   277→                transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+   278→   278→                className="bg-gray-50/80 border border-black/[0.03] rounded-xl p-4"
+   279→   279→              >
+   280→   280→                <div className="flex items-center gap-1.5 mb-2">
+   281→   281→                  <Sparkles className="size-3 text-purple-500" />
+   282→   282→                  <span className="text-[11px] font-medium text-purple-500 tracking-wide">AI SUMMARY</span>
+   283→   283→                </div>
+   284→   284→                <p className="text-sm text-gray-600 leading-relaxed">
+   285→   285→                  {currentSummary}
+   286→   286→                </p>
+   287→   287→              </motion.div>
+   288→   288→            )}
+   289→   289→          </AnimatePresence>
+   290→   290→
+   291→   291→          {phase !== 'result' && <div className="flex-1" />}
+   292→   292→        </div>
+   293→   293→      </motion.div>
+   294→   294→    </div>
+   295→   295→  )
+   296→   296→}
+   297→   297→
+   298→   298→// ═══════════════════════════════════════════════════════════════════════
+   299→   299→// ─── CARD AUTH FORM (EMBEDDED IN PRICING CARDS) ──────────────────────
+   300→   300→// ═══════════════════════════════════════════════════════════════════════
+   301→   301→
+   302→   302→function CardAuthForm({ mode, onSuccess }: { mode: 'signup' | 'premium'; onSuccess: () => void }) {
+   303→   303→  const { signup } = useAetherStore()
+   304→   304→  const [email, setEmail] = useState('')
+   305→   305→  const [password, setPassword] = useState('')
+   306→   306→  const [isLoading, setIsLoading] = useState(false)
+   307→   307→
+   308→   308→  const handleSubmit = async (e: React.FormEvent) => {
+   309→   309→    e.preventDefault()
+   310→   310→    if (!email.trim() || !password.trim()) {
+   311→   311→      toast.error('Please fill in email and password')
+   312→   312→      return
+   313→   313→    }
+   314→   314→    if (password.length < 6) {
+   315→   315→      toast.error('Password must be at least 6 characters')
+   316→   316→      return
+   317→   317→    }
+   318→   318→
+   319→   319→    setIsLoading(true)
+   320→   320→    try {
+   321→   321→      const success = await signup(email.trim(), password, email.trim().split('@')[0])
+   322→   322→      if (success) {
+   323→   323→        toast.success('Welcome to Aether!')
+   324→   324→        onSuccess()
+   325→   325→      } else {
+   326→   326→        toast.error('Signup failed. Email may already be in use.')
+   327→   327→      }
+   328→   328→    } catch {
+   329→   329→      toast.error('Something went wrong. Please try again.')
+   330→   330→    } finally {
+   331→   331→      setIsLoading(false)
+   332→   332→    }
+   333→   333→  }
+   334→   334→
+   335→   335→  return (
+   336→   336→    <form onSubmit={handleSubmit} className="space-y-3 mt-4">
+   337→   337→      <input
+   338→   338→        type="email"
+   339→   339→        placeholder="Email address"
+   340→   340→        value={email}
+   341→   341→        onChange={(e) => setEmail(e.target.value)}
+   342→   342→        disabled={isLoading}
+   343→   343→        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   344→   344→      />
+   345→   345→      <input
+   346→   346→        type="password"
+   347→   347→        placeholder="Password (6+ characters)"
+   348→   348→        value={password}
+   349→   349→        onChange={(e) => setPassword(e.target.value)}
+   350→   350→        disabled={isLoading}
+   351→   351→        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   352→   352→      />
+   353→   353→      <button
+   354→   354→        type="submit"
+   355→   355→        disabled={isLoading}
+   356→   356→        className={cn(
+   357→   357→          'w-full flex items-center justify-center gap-2 rounded-lg h-10 font-medium text-sm transition-all',
+   358→   358→          mode === 'premium'
+   359→   359→            ? 'bg-gradient-to-r from-purple-600 to-rose-500 hover:from-purple-700 hover:to-rose-600 text-white'
+   360→   360→            : 'bg-gray-900 hover:bg-gray-800 text-white',
+   361→   361→          'disabled:opacity-50 disabled:cursor-not-allowed'
+   362→   362→        )}
+   363→   363→      >
+   364→   364→        {isLoading ? (
+   365→   365→          <Loader2 className="size-4 animate-spin" />
+   366→   366→        ) : mode === 'premium' ? (
+   367→   367→          <>
+   368→   368→            Unlock Premium Sanctuary
+   369→   369→            <ArrowRight className="size-3.5" />
+   370→   370→          </>
+   371→   371→        ) : (
+   372→   372→          'Create Free Account'
+   373→   373→        )}
+   374→   374→      </button>
+   375→   375→    </form>
+   376→   376→  )
+   377→   377→}
+   378→   378→
+   379→   379→// ═══════════════════════════════════════════════════════════════════════
+   380→   380→// ─── SIGN IN DIALOG ──────────────────────────────────────────────────
+   381→   381→// ═══════════════════════════════════════════════════════════════════════
+   382→   382→
+   383→   383→function SignInDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+   384→   384→  const { login } = useAetherStore()
+   385→   385→  const [email, setEmail] = useState('')
+   386→   386→  const [password, setPassword] = useState('')
+   387→   387→  const [isLoading, setIsLoading] = useState(false)
+   388→   388→
+   389→   389→  const handleSubmit = async (e: React.FormEvent) => {
+   390→   390→    e.preventDefault()
+   391→   391→    if (!email.trim() || !password.trim()) {
+   392→   392→      toast.error('Please fill in email and password')
+   393→   393→      return
+   394→   394→    }
+   395→   395→
+   396→   396→    setIsLoading(true)
+   397→   397→    try {
+   398→   398→      const success = await login(email.trim(), password)
+   399→   399→      if (success) {
+   400→   400→        toast.success('Welcome back!')
+   401→   401→        onClose()
+   402→   402→      } else {
+   403→   403→        toast.error('Invalid email or password')
+   404→   404→      }
+   405→   405→    } catch {
+   406→   406→      toast.error('Something went wrong')
+   407→   407→    } finally {
+   408→   408→      setIsLoading(false)
+   409→   409→    }
+   410→   410→  }
+   411→   411→
+   412→   412→  return (
+   413→   413→    <AnimatePresence>
+   414→   414→      {open && (
+   415→   415→        <>
+   416→   416→          <motion.div
+   417→   417→            initial={{ opacity: 0 }}
+   418→   418→            animate={{ opacity: 1 }}
+   419→   419→            exit={{ opacity: 0 }}
+   420→   420→            transition={{ duration: 0.2 }}
+   421→   421→            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
+   422→   422→            onClick={onClose}
+   423→   423→          />
+   424→   424→          <motion.div
+   425→   425→            initial={{ opacity: 0, scale: 0.97, y: -10 }}
+   426→   426→            animate={{ opacity: 1, scale: 1, y: 0 }}
+   427→   427→            exit={{ opacity: 0, scale: 0.97, y: -10 }}
+   428→   428→            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+   429→   429→            className="fixed top-20 right-8 z-50 w-80 bg-white border border-black/[0.04] shadow-[0_16px_48px_rgba(0,0,0,0.08)] rounded-2xl p-6"
+   430→   430→            onClick={(e) => e.stopPropagation()}
+   431→   431→          >
+   432→   432→            <div className="flex items-center justify-between mb-5">
+   433→   433→              <h3 className="text-sm font-semibold text-gray-900">Sign In</h3>
+   434→   434→              <button
+   435→   435→                onClick={onClose}
+   436→   436→                className="size-7 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
+   437→   437→              >
+   438→   438→                <X className="size-3.5" />
+   439→   439→              </button>
+   440→   440→            </div>
+   441→   441→
+   442→   442→            <form onSubmit={handleSubmit} className="space-y-3">
+   443→   443→              <input
+   444→   444→                type="email"
+   445→   445→                placeholder="Email address"
+   446→   446→                value={email}
+   447→   447→                onChange={(e) => setEmail(e.target.value)}
+   448→   448→                disabled={isLoading}
+   449→   449→                autoFocus
+   450→   450→                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   451→   451→              />
+   452→   452→              <input
+   453→   453→                type="password"
+   454→   454→                placeholder="Password"
+   455→   455→                value={password}
+   456→   456→                onChange={(e) => setPassword(e.target.value)}
+   457→   457→                disabled={isLoading}
+   458→   458→                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   459→   459→              />
+   460→   460→              <button
+   461→   461→                type="submit"
+   462→   462→                disabled={isLoading}
+   463→   463→                className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg h-10 font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+   464→   464→              >
+   465→   465→                {isLoading ? <Loader2 className="size-4 animate-spin" /> : 'Sign In'}
+   466→   466→              </button>
+   467→   467→            </form>
+   468→   468→          </motion.div>
+   469→   469→        </>
+   470→   470→      )}
+   471→   471→    </AnimatePresence>
+   472→   472→  )
+   473→   473→}
+   474→   474→
+   475→   475→// ═══════════════════════════════════════════════════════════════════════
+   476→   476→// ─── MOBILE AUTH DRAWER ──────────────────────────────────────────────
+   477→   477→// ═══════════════════════════════════════════════════════════════════════
+   478→   478→
+   479→   479→function MobileAuthDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+   480→   480→  const { login, signup } = useAetherStore()
+   481→   481→  const [mode, setMode] = useState<'login' | 'signup'>('login')
+   482→   482→  const [email, setEmail] = useState('')
+   483→   483→  const [password, setPassword] = useState('')
+   484→   484→  const [name, setName] = useState('')
+   485→   485→  const [isLoading, setIsLoading] = useState(false)
+   486→   486→
+   487→   487→  const resetForm = () => {
+   488→   488→    setEmail('')
+   489→   489→    setPassword('')
+   490→   490→    setName('')
+   491→   491→    setIsLoading(false)
+   492→   492→  }
+   493→   493→
+   494→   494→  const handleClose = () => {
+   495→   495→    onClose()
+   496→   496→    setTimeout(resetForm, 200)
+   497→   497→  }
+   498→   498→
+   499→   499→  const handleSubmit = async (e: React.FormEvent) => {
+   500→   500→    e.preventDefault()
+   501→   501→    if (!email.trim() || !password.trim()) {
+   502→   502→      toast.error('Please fill in email and password')
+   503→   503→      return
+   504→   504→    }
+   505→   505→    if (mode === 'signup' && password.length < 6) {
+   506→   506→      toast.error('Password must be at least 6 characters')
+   507→   507→      return
+   508→   508→    }
+   509→   509→
+   510→   510→    setIsLoading(true)
+   511→   511→    try {
+   512→   512→      const success = mode === 'login'
+   513→   513→        ? await login(email.trim(), password)
+   514→   514→        : await signup(email.trim(), password, name.trim())
+   515→   515→
+   516→   516→      if (success) {
+   517→   517→        toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
+   518→   518→        handleClose()
+   519→   519→      } else {
+   520→   520→        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
+   521→   521→      }
+   522→   522→    } catch {
+   523→   523→      toast.error('Something went wrong. Please try again.')
+   524→   524→    } finally {
+   525→   525→      setIsLoading(false)
+   526→   526→    }
+   527→   527→  }
+   528→   528→
+   529→   529→  return (
+   530→   530→    <AnimatePresence>
+   531→   531→      {open && (
+   532→   532→        <>
+   533→   533→          <motion.div
+   534→   534→            initial={{ opacity: 0 }}
+   535→   535→            animate={{ opacity: 1 }}
+   536→   536→            exit={{ opacity: 0 }}
+   537→   537→            transition={{ duration: 0.2 }}
+   538→   538→            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
+   539→   539→            onClick={handleClose}
+   540→   540→          />
+   541→   541→          <motion.div
+   542→   542→            initial={{ y: '100%' }}
+   543→   543→            animate={{ y: 0 }}
+   544→   544→            exit={{ y: '100%' }}
+   545→   545→            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+   546→   546→            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
+   547→   547→            onClick={(e) => e.stopPropagation()}
+   548→   548→          >
+   549→   549→            <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
+   550→   550→            <div className="flex justify-end mb-2">
+   551→   551→              <button
+   552→   552→                onClick={handleClose}
+   553→   553→                className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+   554→   554→              >
+   555→   555→                <X className="size-4" />
+   556→   556→              </button>
+   557→   557→            </div>
+   558→   558→
+   559→   559→            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+   560→   560→              {mode === 'login' ? 'Sign In' : 'Create Account'}
+   561→   561→            </h3>
+   562→   562→
+   563→   563→            <form onSubmit={handleSubmit} className="space-y-4">
+   564→   564→              {mode === 'signup' && (
+   565→   565→                <input
+   566→   566→                  type="text"
+   567→   567→                  placeholder="Name"
+   568→   568→                  value={name}
+   569→   569→                  onChange={(e) => setName(e.target.value)}
+   570→   570→                  disabled={isLoading}
+   571→   571→                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   572→   572→                />
+   573→   573→              )}
+   574→   574→              <input
+   575→   575→                type="email"
+   576→   576→                placeholder="Email"
+   577→   577→                value={email}
+   578→   578→                onChange={(e) => setEmail(e.target.value)}
+   579→   579→                disabled={isLoading}
+   580→   580→                autoFocus
+   581→   581→                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   582→   582→              />
+   583→   583→              <input
+   584→   584→                type="password"
+   585→   585→                placeholder="Password"
+   586→   586→                value={password}
+   587→   587→                onChange={(e) => setPassword(e.target.value)}
+   588→   588→                disabled={isLoading}
+   589→   589→                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   590→   590→              />
+   591→   591→              <button
+   592→   592→                type="submit"
+   593→   593→                disabled={isLoading}
+   594→   594→                className={cn(
+   595→   595→                  'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-11 font-medium text-sm transition-colors',
+   596→   596→                  'disabled:opacity-50 disabled:cursor-not-allowed'
+   597→   597→                )}
+   598→   598→              >
+   599→   599→                {isLoading ? (
+   600→   600→                  <Loader2 className="size-4 animate-spin" />
+   601→   601→                ) : (
+   602→   602→                  mode === 'login' ? 'Sign In' : 'Create Account'
+   603→   603→                )}
+   604→   604→              </button>
+   605→   605→            </form>
+   606→   606→
+   607→   607→            <div className="mt-6 text-center">
+   608→   608→              <button
+   609→   609→                onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+   610→   610→                className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
+   611→   611→                disabled={isLoading}
+   612→   612→              >
+   613→   613→                {mode === 'login' ? 'Sign up' : 'Sign in'}
+   614→   614→              </button>
+   615→   615→            </div>
+   616→   616→          </motion.div>
+   617→   617→        </>
+   618→   618→      )}
+   619→   619→    </AnimatePresence>
+   620→   620→  )
+   621→   621→}
+   622→   622→
+   623→   623→// ═══════════════════════════════════════════════════════════════════════
+   624→   624→// ─── DESKTOP LANDING PAGE ────────────────────────────────────────────
+   625→   625→// ═══════════════════════════════════════════════════════════════════════
+   626→   626→
+   627→   627→function LandingPage({ onSkipToDashboard }: { onSkipToDashboard: () => void }) {
+   628→   628→  const [showSignIn, setShowSignIn] = useState(false)
+   629→   629→  const handleAuthSuccess = useCallback(() => {
+   630→   630→    // Auth success is handled by the store; Home will switch to Dashboard
+   631→   631→  }, [])
+   632→   632→
+   633→   633→  return (
+   634→   634→    <div className="min-h-screen bg-[#F9FAFB] flex flex-col relative overflow-hidden">
+   635→   635→      {/* Background ambient blobs */}
+   636→   636→      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+   637→   637→        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-purple-100/40 blur-3xl animate-ambient-drift" />
+   638→   638→        <div className="absolute top-1/3 -right-32 w-80 h-80 rounded-full bg-rose-100/30 blur-3xl animate-ambient-drift-alt" />
+   639→   639→        <div className="absolute -bottom-24 left-1/4 w-72 h-72 rounded-full bg-amber-100/20 blur-3xl animate-ambient-drift" />
+   640→   640→      </div>
+   641→   641→
+   642→   642→      {/* Floating Header */}
+   643→   643→      <header className="fixed top-0 left-0 right-0 z-40 px-6 py-4">
+   644→   644→        <div className="max-w-6xl mx-auto flex items-center justify-between">
+   645→   645→          <div className="flex items-center gap-2.5">
+   646→   646→            <div className="size-9 rounded-xl bg-zinc-900 flex items-center justify-center shadow-sm">
+   647→   647→              <Brain className="size-5 text-white" />
+   648→   648→            </div>
+   649→   649→            <span className="text-sm font-semibold text-gray-900 tracking-tight">Aether</span>
+   650→   650→          </div>
+   651→   651→          <button
+   652→   652→            onClick={() => setShowSignIn(true)}
+   653→   653→            className="text-sm font-medium text-gray-500 hover:text-gray-900 px-4 py-2 rounded-lg hover:bg-white/60 border border-transparent hover:border-black/[0.06] transition-all"
+   654→   654→          >
+   655→   655→            Sign In
+   656→   656→          </button>
+   657→   657→        </div>
+   658→   658→      </header>
+   659→   659→
+   660→   660→      {/* Section 1: The Purpose Hero */}
+   661→   661→      <section className="flex-1 flex items-center justify-center pt-24 pb-16 px-6 relative">
+   662→   662→        <motion.div
+   663→   663→          variants={staggerContainer}
+   664→   664→          initial="hidden"
+   665→   665→          animate="visible"
+   666→   666→          className="max-w-2xl mx-auto text-center"
+   667→   667→        >
+   668→   668→          <motion.div variants={staggerChild} className="mb-6">
+   669→   669→            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 border border-purple-100/60">
+   670→   670→              <Sparkles className="size-3 text-purple-500" />
+   671→   671→              <span className="text-[11px] font-medium text-purple-600 tracking-wide">COGNITIVE SANCTUARY</span>
+   672→   672→            </div>
+   673→   673→          </motion.div>
+   674→   674→
+   675→   675→          <motion.h1
+   676→   676→            variants={staggerChild}
+   677→   677→            className="text-4xl sm:text-5xl md:text-[56px] font-semibold text-gray-900 tracking-tight leading-[1.1] mb-6"
+   678→   678→          >
+   679→   679→            A sanctuary for thoughts{' '}
+   680→   680→            <span className="bg-gradient-to-r from-purple-600 to-rose-500 bg-clip-text text-transparent">
+   681→   681→              that move too fast.
+   682→   682→            </span>
+   683→   683→          </motion.h1>
+   684→   684→
+   685→   685→          <motion.p
+   686→   686→            variants={staggerChild}
+   687→   687→            className="text-base sm:text-lg text-gray-500 leading-relaxed max-w-xl mx-auto"
+   688→   688→          >
+   689→   689→            An elite cognitive workspace built to capture raw spoken audio, code logic, images, and links. Zero clutter. Total structural recall.
+   690→   690→          </motion.p>
+   691→   691→
+   692→   692→          <motion.div variants={staggerChild} className="mt-8 flex flex-col items-center gap-4">
+   693→   693→            <div className="flex items-center gap-4">
+   694→   694→              <button
+   695→   695→                onClick={() => {
+   696→   696→                  const el = document.getElementById('pricing')
+   697→   697→                  if (el) el.scrollIntoView({ behavior: 'smooth' })
+   698→   698→                }}
+   699→   699→                className="inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl px-6 h-11 font-medium text-sm transition-colors"
+   700→   700→              >
+   701→   701→                Get Started
+   702→   702→                <ArrowRight className="size-4" />
+   703→   703→              </button>
+   704→   704→              <button
+   705→   705→                onClick={() => setShowSignIn(true)}
+   706→   706→                className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 rounded-xl px-6 h-11 font-medium text-sm hover:bg-white/60 border border-black/[0.06] transition-all"
+   707→   707→              >
+   708→   708→                Sign In
+   709→   709→              </button>
+   710→   710→            </div>
+   711→   711→            <button
+   712→   712→              onClick={onSkipToDashboard}
+   713→   713→              className="text-xs text-gray-400 hover:text-purple-500 transition-colors underline underline-offset-4"
+   714→   714→            >
+   715→   715→              Try without an account →
+   716→   716→            </button>
+   717→   717→          </motion.div>
+   718→   718→        </motion.div>
+   719→   719→      </section>
+   720→   720→
+   721→   721→      {/* Section 2: The Living Interactive Demo */}
+   722→   722→      <section className="py-16 px-6">
+   723→   723→        <motion.div
+   724→   724→          initial="hidden"
+   725→   725→          whileInView="visible"
+   726→   726→          viewport={{ once: true, margin: '-60px' }}
+   727→   727→          variants={staggerContainer}
+   728→   728→          className="max-w-6xl mx-auto"
+   729→   729→        >
+   730→   730→          <motion.div variants={staggerChild} className="text-center mb-10">
+   731→   731→            <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">See it in action</span>
+   732→   732→          </motion.div>
+   733→   733→          <InteractiveDemo />
+   734→   734→        </motion.div>
+   735→   735→      </section>
+   736→   736→
+   737→   737→      {/* Section 3: Asymmetric Pricing & Registration Matrix */}
+   738→   738→      <section id="pricing" className="py-20 px-6 pb-32">
+   739→   739→        <motion.div
+   740→   740→          initial="hidden"
+   741→   741→          whileInView="visible"
+   742→   742→          viewport={{ once: true, margin: '-60px' }}
+   743→   743→          variants={staggerContainer}
+   744→   744→          className="max-w-4xl mx-auto"
+   745→   745→        >
+   746→   746→          <motion.div variants={staggerChild} className="text-center mb-12">
+   747→   747→            <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight mb-3">
+   748→   748→              Begin your cognitive journey
+   749→   749→            </h2>
+   750→   750→            <p className="text-sm text-gray-400">No credit card required. Start thinking freely.</p>
+   751→   751→          </motion.div>
+   752→   752→
+   753→   753→          <motion.div variants={staggerChild} className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+   754→   754→            {/* Left Card: Ambient Free Tier */}
+   755→   755→            <div className="bg-white border border-black/[0.06] rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow duration-300">
+   756→   756→              <div className="mb-6">
+   757→   757→                <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">Ambient</span>
+   758→   758→              </div>
+   759→   759→              <div className="flex items-baseline gap-1 mb-2">
+   760→   760→                <span className="text-4xl font-semibold text-gray-900">$0.00</span>
+   761→   761→                <span className="text-sm text-gray-400">/ Free</span>
+   762→   762→              </div>
+   763→   763→              <p className="text-sm text-gray-500 leading-relaxed mb-5">
+   764→   764→                15 Cognitive Captures per month, standard voice dictation, and basic timeline indexing.
+   765→   765→              </p>
+   766→   766→              <ul className="space-y-2.5 mb-2">
+   767→   767→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   768→   768→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   769→   769→                  15 captures / month
+   770→   770→                </li>
+   771→   771→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   772→   772→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   773→   773→                  Text & link capture
+   774→   774→                </li>
+   775→   775→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   776→   776→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   777→   777→                  AI summaries
+   778→   778→                </li>
+   779→   779→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   780→   780→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   781→   781→                  Local timeline indexing
+   782→   782→                </li>
+   783→   783→              </ul>
+   784→   784→              <div className="mt-6 pt-5 border-t border-black/[0.04]">
+   785→   785→                <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
+   786→   786→                  Create Free Account
+   787→   787→                </label>
+   788→   788→                <CardAuthForm mode="signup" onSuccess={handleAuthSuccess} />
+   789→   789→              </div>
+   790→   790→            </div>
+   791→   791→
+   792→   792→            {/* Right Card: Ascent Premium Tier */}
+   793→   793→            <div className="relative bg-white rounded-2xl p-8 shadow-[0_8px_40px_rgba(0,0,0,0.06)]">
+   794→   794→              <div className="absolute inset-0 rounded-2xl p-[2px] animate-gradient-border bg-[length:200%_200%] bg-gradient-to-r from-purple-500 via-rose-400 to-purple-600">
+   795→   795→                <div className="w-full h-full bg-white rounded-[14px]" />
+   796→   796→              </div>
+   797→   797→              <div className="relative z-10">
+   798→   798→                <div className="flex items-center justify-between mb-6">
+   799→   799→                  <span className="text-[11px] font-medium text-purple-500 tracking-widest uppercase">Ascent</span>
+   800→   800→                  <span className="text-[10px] font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100/60">
+   801→   801→                    PREMIUM
+   802→   802→                  </span>
+   803→   803→                </div>
+   804→   804→                <div className="flex items-baseline gap-1 mb-2">
+   805→   805→                  <span className="text-4xl font-semibold text-gray-900">$5.99</span>
+   806→   806→                  <span className="text-sm text-gray-400">/ month</span>
+   807→   807→                </div>
+   808→   808→                <p className="text-sm text-gray-500 leading-relaxed mb-5">
+   809→   809→                  Infinite Cognitive Scale, sub-second Groq voice pipelines, deep Gemini insights, and autonomous 10-memory auto-collection grouping.
+   810→   810→                </p>
+   811→   811→                <ul className="space-y-2.5 mb-2">
+   812→   812→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   813→   813→                    <Zap className="size-3.5 text-purple-500 shrink-0" />
+   814→   814→                    Unlimited captures
+   815→   815→                  </li>
+   816→   816→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   817→   817→                    <Volume2 className="size-3.5 text-purple-500 shrink-0" />
+   818→   818→                    Sub-second Groq voice processing
+   819→   819→                  </li>
+   820→   820→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   821→   821→                    <Brain className="size-3.5 text-purple-500 shrink-0" />
+   822→   822→                    Deep cognitive insights
+   823→   823→                  </li>
+   824→   824→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   825→   825→                    <Layers className="size-3.5 text-purple-500 shrink-0" />
+   826→   826→                    Auto-clustering collections
+   827→   827→                  </li>
+   828→   828→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   829→   829→                    <Sparkles className="size-3.5 text-purple-500 shrink-0" />
+   830→   830→                    Priority AI synthesis
+   831→   831→                  </li>
+   832→   832→                </ul>
+   833→   833→                <div className="mt-6 pt-5 border-t border-black/[0.04]">
+   834→   834→                  <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
+   835→   835→                    Unlock Premium Sanctuary
+   836→   836→                  </label>
+   837→   837→                  <CardAuthForm mode="premium" onSuccess={handleAuthSuccess} />
+   838→   838→                </div>
+   839→   839→              </div>
+   840→   840→            </div>
+   841→   841→          </motion.div>
+   842→   842→        </motion.div>
+   843→   843→      </section>
+   844→   844→
+   845→   845→      {/* Footer */}
+   846→   846→      <footer className="py-6 text-center border-t border-black/[0.03]">
+   847→   847→        <p className="text-xs text-gray-400">Aether &mdash; Your cognitive sanctuary</p>
+   848→   848→      </footer>
+   849→   849→
+   850→   850→      {/* Sign In Dialog */}
+   851→   851→      <SignInDialog open={showSignIn} onClose={() => setShowSignIn(false)} />
+   852→   852→    </div>
+   853→   853→  )
+   854→   854→}
+   855→   855→
+   856→   856→// ═══════════════════════════════════════════════════════════════════════
+   857→   857→// ─── INSPECTION DRAWER ───────────────────────────────────────────────
+   858→   858→// ═══════════════════════════════════════════════════════════════════════
+   859→   859→
+   860→   860→function InspectionDrawer({
+   861→   861→  memory,
+   862→   862→  open,
+   863→   863→  onClose,
+   864→   864→  onPurge,
+   865→   865→  onDownload,
+   866→   866→}: {
+   867→   867→  memory: Memory | null
+   868→   868→  open: boolean
+   869→   869→  onClose: () => void
+   870→   870→  onPurge: (id: string) => void
+   871→   871→  onDownload: (memory: Memory) => void
+   872→   872→}) {
+   873→   873→  const [confirmPurge, setConfirmPurge] = useState(false)
+   874→   874→
+   875→   875→  // Reset confirm state when drawer closes
+   876→   876→  const handleClose = useCallback(() => {
+   877→   877→    setConfirmPurge(false)
+   878→   878→    onClose()
+   879→   879→  }, [onClose])
+   880→   880→
+   881→   881→  if (!memory) return null
+   882→   882→
+   883→   883→  const handlePurgeClick = () => {
+   884→   884→    if (!confirmPurge) {
+   885→   885→      setConfirmPurge(true)
+   886→   886→      return
+   887→   887→    }
+   888→   888→    onPurge(memory.id)
+   889→   889→  }
+   890→   890→
+   891→   891→  return (
+   892→   892→    <AnimatePresence>
+   893→   893→      {open && (
+   894→   894→        <motion.div
+   895→   895→          initial={{ x: '100%' }}
+   896→   896→          animate={{ x: 0 }}
+   897→   897→          exit={{ x: '100%' }}
+   898→   898→          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+   899→   899→          className="fixed top-0 right-0 h-full w-full sm:w-[450px] bg-white border-l border-zinc-200 p-6 sm:p-8 shadow-2xl z-50 overflow-y-auto"
+   900→   900→        >
+   901→   901→          {/* Close button */}
+   902→   902→          <div className="flex items-center justify-between mb-6">
+   903→   903→            <div className="flex items-center gap-2">
+   904→   904→              <Eye className="size-4 text-purple-500" />
+   905→   905→              <span className="text-xs font-medium text-purple-500 tracking-wide uppercase">Inspection</span>
+   906→   906→            </div>
+   907→   907→            <button
+   908→   908→              onClick={handleClose}
+   909→   909→              className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+   910→   910→            >
+   911→   911→              <X className="size-4" />
+   912→   912→            </button>
+   913→   913→          </div>
+   914→   914→
+   915→   915→          {/* AI Summary */}
+   916→   916→          {memory.summary && (
+   917→   917→            <div className="mb-6">
+   918→   918→              <div className="flex items-center gap-1.5 mb-2">
+   919→   919→                <Sparkles className="size-3 text-purple-500" />
+   920→   920→                <span className="text-[11px] font-medium text-purple-500 tracking-wide uppercase">AI Summary</span>
+   921→   921→              </div>
+   922→   922→              <p className="text-sm text-gray-700 leading-relaxed">{memory.summary}</p>
+   923→   923→            </div>
+   924→   924→          )}
+   925→   925→
+   926→   926→          {/* Raw Original Content */}
+   927→   927→          <div className="mb-6">
+   928→   928→            <div className="flex items-center gap-1.5 mb-2">
+   929→   929→              <FileText className="size-3 text-gray-400" />
+   930→   930→              <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Original Content</span>
+   931→   931→            </div>
+   932→   932→            <div className="bg-gray-50 border border-black/[0.04] rounded-xl p-4 max-h-60 overflow-y-auto">
+   933→   933→              {memory.imageUrl && (
+   934→   934→                <img
+   935→   935→                  src={memory.imageUrl}
+   936→   936→                  alt="Memory image"
+   937→   937→                  className="w-full rounded-lg mb-3 max-h-40 object-cover"
+   938→   938→                />
+   939→   939→              )}
+   940→   940→              {memory.imagePreview && !memory.imageUrl && (
+   941→   941→                <img
+   942→   942→                  src={memory.imagePreview}
+   943→   943→                  alt="Memory image preview"
+   944→   944→                  className="w-full rounded-lg mb-3 max-h-40 object-cover"
+   945→   945→                />
+   946→   946→              )}
+   947→   947→              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{memory.content}</p>
+   948→   948→            </div>
+   949→   949→          </div>
+   950→   950→
+   951→   951→          {/* Source URL */}
+   952→   952→          {memory.sourceUrl && (
+   953→   953→            <div className="mb-6">
+   954→   954→              <div className="flex items-center gap-1.5 mb-2">
+   955→   955→                <Link2 className="size-3 text-gray-400" />
+   956→   956→                <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Source</span>
+   957→   957→              </div>
+   958→   958→              <a
+   959→   959→                href={memory.sourceUrl}
+   960→   960→                target="_blank"
+   961→   961→                rel="noopener noreferrer"
+   962→   962→                className="text-sm text-purple-600 hover:text-purple-800 underline break-all"
+   963→   963→              >
+   964→   964→                {memory.sourceUrl}
+   965→   965→              </a>
+   966→   966→            </div>
+   967→   967→          )}
+   968→   968→
+   969→   969→          {/* Deep Cognitive Insight */}
+   970→   970→          {(memory.deepInsight || memory.recap) && (
+   971→   971→            <div className="mb-6">
+   972→   972→              <div className="flex items-center gap-1.5 mb-2">
+   973→   973→                <Brain className="size-3 text-purple-500" />
+   974→   974→                <span className="text-[11px] font-medium text-purple-500 tracking-wide uppercase">Deep Insight</span>
+   975→   975→              </div>
+   976→   976→              <div className="bg-purple-50/50 border border-purple-100/60 rounded-xl p-4">
+   977→   977→                <p className="text-sm text-gray-700 leading-relaxed">{memory.deepInsight || memory.recap}</p>
+   978→   978→              </div>
+   979→   979→            </div>
+   980→   980→          )}
+   981→   981→
+   982→   982→          {/* Tags */}
+   983→   983→          {memory.tags.length > 0 && (
+   984→   984→            <div className="mb-6">
+   985→   985→              <div className="flex items-center gap-1.5 mb-2">
+   986→   986→                <Layers className="size-3 text-gray-400" />
+   987→   987→                <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Tags</span>
+   988→   988→              </div>
+   989→   989→              <div className="flex flex-wrap gap-2">
+   990→   990→                {memory.tags.map((tag) => (
+   991→   991→                  <span
+   992→   992→                    key={tag}
+   993→   993→                    className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200"
+   994→   994→                  >
+   995→   995→                    {tag}
+   996→   996→                  </span>
+   997→   997→                ))}
+   998→   998→              </div>
+   999→   999→            </div>
+  1000→  1000→          )}
+  1001→  1001→
+  1002→  1002→          {/* Metadata */}
+  1003→  1003→          <div className="mb-8">
+  1004→  1004→            <div className="flex items-center gap-1.5 mb-2">
+  1005→  1005→              <Clock className="size-3 text-gray-400" />
+  1006→  1006→              <span className="text-[11px] font-medium text-gray-400 tracking-wide uppercase">Metadata</span>
+  1007→  1007→            </div>
+  1008→  1008→            <div className="text-xs text-gray-500 space-y-1">
+  1009→  1009→              <p>Type: {memory.type}</p>
+  1010→  1010→              <p>Created: {new Date(memory.createdAt).toLocaleString()}</p>
+  1011→  1011→              {memory.collections && memory.collections.length > 0 && (
+  1012→  1012→                <p>Collections: {memory.collections.map((c) => c.name).join(', ')}</p>
+  1013→  1013→              )}
+  1014→  1014→            </div>
+  1015→  1015→          </div>
+  1016→  1016→
+  1017→  1017→          {/* Action Buttons */}
+  1018→  1018→          <div className="space-y-3 pt-4 border-t border-zinc-100">
+  1019→  1019→            <button
+  1020→  1020→              onClick={() => onDownload(memory)}
+  1021→  1021→              className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-11 font-medium text-sm transition-colors"
+  1022→  1022→            >
+  1023→  1023→              <Download className="size-4" />
+  1024→  1024→              Download Markdown Asset
+  1025→  1025→            </button>
+  1026→  1026→            <button
+  1027→  1027→              onClick={handlePurgeClick}
+  1028→  1028→              className={cn(
+  1029→  1029→                'w-full flex items-center justify-center gap-2 rounded-xl h-11 font-medium text-sm transition-colors',
+  1030→  1030→                confirmPurge
+  1031→  1031→                  ? 'bg-red-600 hover:bg-red-700 text-white'
+  1032→  1032→                  : 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200'
+  1033→  1033→              )}
+  1034→  1034→            >
+  1035→  1035→              <Trash2 className="size-4" />
+  1036→  1036→              {confirmPurge ? 'Confirm Purge Asset' : 'Purge Asset'}
+  1037→  1037→            </button>
+  1038→  1038→          </div>
+  1039→  1039→        </motion.div>
+  1040→  1040→      )}
+  1041→  1041→    </AnimatePresence>
+  1042→  1042→  )
+  1043→  1043→}
+  1044→  1044→
+  1045→  1045→// ═══════════════════════════════════════════════════════════════════════
+  1046→  1046→// ─── MEMORY CARD ─────────────────────────────────────────────────────
+  1047→  1047→// ═══════════════════════════════════════════════════════════════════════
+  1048→  1048→
+  1049→  1049→function MemoryCard({
+  1050→  1050→  memory,
+  1051→  1051→  onClick,
+  1052→  1052→}: {
+  1053→  1053→  memory: Memory
+  1054→  1054→  onClick: () => void
+  1055→  1055→}) {
+  1056→  1056→  const TypeIcon = typeIconMap[memory.type] || typeIconMap.note
+  1057→  1057→
+  1058→  1058→  return (
+  1059→  1059→    <motion.button
+  1060→  1060→      layout
+  1061→  1061→      initial={{ opacity: 0, y: 12 }}
+  1062→  1062→      animate={{ opacity: 1, y: 0 }}
+  1063→  1063→      exit={{ opacity: 0, y: -8, scale: 0.96 }}
+  1064→  1064→      transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+  1065→  1065→      onClick={onClick}
+  1066→  1066→      className="w-full text-left bg-white border border-black/[0.04] rounded-xl p-4 hover:shadow-md hover:border-purple-200/40 transition-all duration-200 group"
+  1067→  1067→    >
+  1068→  1068→      <div className="flex items-start gap-3">
+  1069→  1069→        <div className="size-8 rounded-lg flex items-center justify-center shrink-0 bg-gray-50 text-gray-400 group-hover:bg-purple-50 group-hover:text-purple-500 transition-colors">
+  1070→  1070→          <TypeIcon className="size-4" />
+  1071→  1071→        </div>
+  1072→  1072→        <div className="flex-1 min-w-0">
+  1073→  1073→          <p className="text-sm text-gray-900 font-medium truncate leading-tight mb-1">
+  1074→  1074→            {memory.title || 'Untitled'}
+  1075→  1075→          </p>
+  1076→  1076→          {memory.summary && (
+  1077→  1077→            <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-1.5">
+  1078→  1078→              {memory.summary}
+  1079→  1079→            </p>
+  1080→  1080→          )}
+  1081→  1081→          {!memory.summary && memory.content && (
+  1082→  1082→            <p className="text-xs text-gray-400 leading-relaxed line-clamp-2 mb-1.5">
+  1083→  1083→              {memory.content.slice(0, 120)}
+  1084→  1084→            </p>
+  1085→  1085→          )}
+  1086→  1086→          <div className="flex items-center gap-2">
+  1087→  1087→            <span className="text-[10px] text-gray-400">
+  1088→  1088→              {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
+  1089→  1089→            </span>
+  1090→  1090→            {memory.tags.length > 0 && (
+  1091→  1091→              <div className="flex gap-1">
+  1092→  1092→                {memory.tags.slice(0, 2).map((tag) => (
+  1093→  1093→                  <span
+  1094→  1094→                    key={tag}
+  1095→  1095→                    className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
+  1096→  1096→                  >
+  1097→  1097→                    {tag}
+  1098→  1098→                  </span>
+  1099→  1099→                ))}
+  1100→  1100→              </div>
+  1101→  1101→            )}
+  1102→  1102→          </div>
+  1103→  1103→        </div>
+  1104→  1104→        <ChevronRight className="size-4 text-gray-300 group-hover:text-purple-400 shrink-0 mt-1 transition-colors" />
+  1105→  1105→      </div>
+  1106→  1106→    </motion.button>
+  1107→  1107→  )
+  1108→  1108→}
+  1109→  1109→
+  1110→  1110→// ═══════════════════════════════════════════════════════════════════════
+  1111→  1111→// ─── DASHBOARD VIEW ──────────────────────────────────────────────────
+  1112→  1112→// ═══════════════════════════════════════════════════════════════════════
+  1113→  1113→
+  1114→  1114→function DashboardView() {
+  1115→  1115→  const {
+  1116→  1116→    memories,
+  1117→  1117→    addMemory,
+  1118→  1118→    deleteMemory,
+  1119→  1119→    deleteMemoryFromDB,
+  1120→  1120→    isLoading,
+  1121→  1121→    isAuthenticated,
+  1122→  1122→    fetchMemories,
+  1123→  1123→  } = useAetherStore()
+  1124→  1124→
+  1125→  1125→  const isMobile = useIsMobile()
+  1126→  1126→
+  1127→  1127→  // Capture state
+  1128→  1128→  const [captureText, setCaptureText] = useState('')
+  1129→  1129→  const [isSaving, setIsSaving] = useState(false)
+  1130→  1130→  const [showCaptureAnimation, setShowCaptureAnimation] = useState(false)
+  1131→  1131→
+  1132→  1132→  // Voice recording state
+  1133→  1133→  const [isRecording, setIsRecording] = useState(false)
+  1134→  1134→  const [isTranscribing, setIsTranscribing] = useState(false)
+  1135→  1135→  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  1136→  1136→  const audioChunksRef = useRef<Blob[]>([])
+  1137→  1137→
+  1138→  1138→  // Image upload state
+  1139→  1139→  const [imagePreview, setImagePreview] = useState<{ file: File; url: string; name: string } | null>(null)
+  1140→  1140→  const fileInputRef = useRef<HTMLInputElement>(null)
+  1141→  1141→
+  1142→  1142→  // Inspection drawer state
+  1143→  1143→  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
+  1144→  1144→  const [drawerOpen, setDrawerOpen] = useState(false)
+  1145→  1145→
+  1146→  1146→  // Auth modal state (for mobile)
+  1147→  1147→  const [showMobileAuth, setShowMobileAuth] = useState(false)
+  1148→  1148→
+  1149→  1149→  // Input ref
+  1150→  1150→  const inputRef = useRef<HTMLInputElement>(null)
+  1151→  1151→
+  1152→  1152→  // Fetch memories on mount
+  1153→  1153→  useEffect(() => {
+  1154→  1154→    fetchMemories()
+  1155→  1155→  }, [fetchMemories])
+  1156→  1156→
+  1157→  1157→  // Sorted memories
+  1158→  1158→  const sortedMemories = useMemo(() => {
+  1159→  1159→    if (!Array.isArray(memories)) return []
+  1160→  1160→    return [...memories].sort(
+  1161→  1161→      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  1162→  1162→    )
+  1163→  1163→  }, [memories])
+  1164→  1164→
+  1165→  1165→  // ── AUTH GATE FOR CAPTURE (soft gate - guest mode allowed) ──────────
+  1166→  1166→  const gateCapture = useCallback((): boolean => {
+  1167→  1167→    if (!isAuthenticated) {
+  1168→  1168→      if (isMobile) {
+  1169→  1169→        setShowMobileAuth(true)
+  1170→  1170→        return false
+  1171→  1171→      }
+  1172→  1172→      // Desktop: allow guest mode with a soft reminder
+  1173→  1173→      toast.info('Sign in to sync memories across devices', { duration: 3000 })
+  1174→  1174→    }
+  1175→  1175→    return true
+  1176→  1176→  }, [isAuthenticated, isMobile])
+  1177→  1177→
+  1178→  1178→  // ── UNIVERSAL CAPTURE SUBMIT ───────────────────────────────────────
+  1179→  1179→  const handleCaptureSubmit = useCallback(async () => {
+  1180→  1180→    if (!gateCapture()) return
+  1181→  1181→
+  1182→  1182→    const text = captureText.trim()
+  1183→  1183→    const image = imagePreview
+  1184→  1184→
+  1185→  1185→    if (!text && !image) return
+  1186→  1186→
+  1187→  1187→    setIsSaving(true)
+  1188→  1188→    setShowCaptureAnimation(true)
+  1189→  1189→
+  1190→  1190→    try {
+  1191→  1191→      const formData = new FormData()
+  1192→  1192→
+  1193→  1193→      if (text.trim()) {
+  1194→  1194→        formData.append('text', text.trim())
+  1195→  1195→      }
+  1196→  1196→
+  1197→  1197→      if (image?.file) {
+  1198→  1198→        formData.append('image', image.file)
+  1199→  1199→        formData.append('type', 'image')
+  1200→  1200→      } else {
+  1201→  1201→        const detected = detectContentType(text || 'note')
+  1202→  1202→        formData.append('type', mapToMemoryType(detected))
+  1203→  1203→
+  1204→  1204→        if (detected === 'link') {
+  1205→  1205→          formData.append('url', text.trim())
+  1206→  1206→        }
+  1207→  1207→      }
+  1208→  1208→
+  1209→  1209→      const response = await fetch('/api/capture', {
+  1210→  1210→        method: 'POST',
+  1211→  1211→        body: formData,
+  1212→  1212→      })
+  1213→  1213→
+  1214→  1214→      if (!response.ok) {
+  1215→  1215→        const errorData = await response.json().catch(() => ({}))
+  1216→  1216→        const errorMessage = (errorData as { error?: string }).error || `Server error: ${response.status}`
+  1217→  1217→        throw new Error(errorMessage)
+  1218→  1218→      }
+  1219→  1219→
+  1220→  1220→      const data = await response.json()
+  1221→  1221→
+  1222→  1222→      if (data.success && data.memory) {
+  1223→  1223→        const newMemory = data.memory as Memory
+  1224→  1224→        addMemory(newMemory)
+  1225→  1225→      }
+  1226→  1226→
+  1227→  1227→      setCaptureText('')
+  1228→  1228→      setImagePreview(null)
+  1229→  1229→      if (fileInputRef.current) fileInputRef.current.value = ''
+  1230→  1230→
+  1231→  1231→      setTimeout(() => {
+  1232→  1232→        inputRef.current?.focus()
+  1233→  1233→      }, 50)
+  1234→  1234→
+  1235→  1235→      toast.success('Memory captured')
+  1236→  1236→    } catch (error) {
+  1237→  1237→      console.error('[Dashboard] Capture failed:', error)
+  1238→  1238→      const message = error instanceof Error ? error.message : 'Failed to save — please try again'
+  1239→  1239→      toast.error(message)
+  1240→  1240→    } finally {
+  1241→  1241→      setIsSaving(false)
+  1242→  1242→      setTimeout(() => setShowCaptureAnimation(false), 300)
+  1243→  1243→    }
+  1244→  1244→  }, [captureText, imagePreview, addMemory, gateCapture])
+  1245→  1245→
+  1246→  1246→  // ── VOICE RECORDING ────────────────────────────────────────────────
+  1247→  1247→  const handleMicClick = useCallback(() => {
+  1248→  1248→    if (!gateCapture()) return
+  1249→  1249→    if (isRecording) {
+  1250→  1250→      stopRecording()
+  1251→  1251→    } else {
+  1252→  1252→      startRecording()
+  1253→  1253→    }
+  1254→  1254→  }, [isRecording, gateCapture])
+  1255→  1255→
+  1256→  1256→  const startRecording = useCallback(async () => {
+  1257→  1257→    try {
+  1258→  1258→      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  1259→  1259→      const mediaRecorder = new MediaRecorder(stream, {
+  1260→  1260→        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+  1261→  1261→          ? 'audio/webm;codecs=opus'
+  1262→  1262→          : 'audio/webm',
+  1263→  1263→      })
+  1264→  1264→      audioChunksRef.current = []
+  1265→  1265→
+  1266→  1266→      mediaRecorder.ondataavailable = (event) => {
+  1267→  1267→        if (event.data.size > 0) {
+  1268→  1268→          audioChunksRef.current.push(event.data)
+  1269→  1269→        }
+  1270→  1270→      }
+  1271→  1271→
+  1272→  1272→      mediaRecorder.onstop = async () => {
+  1273→  1273→        stream.getTracks().forEach((track) => track.stop())
+  1274→  1274→        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+  1275→  1275→        setIsTranscribing(true)
+  1276→  1276→
+  1277→  1277→        try {
+  1278→  1278→          const formData = new FormData()
+  1279→  1279→          formData.append('audio', audioBlob, 'recording.webm')
+  1280→  1280→          formData.append('type', 'voice')
+  1281→  1281→
+  1282→  1282→          const currentText = captureText.trim()
+  1283→  1283→          if (currentText) {
+  1284→  1284→            formData.append('text', currentText)
+  1285→  1285→          }
+  1286→  1286→
+  1287→  1287→          const response = await fetch('/api/capture', {
+  1288→  1288→            method: 'POST',
+  1289→  1289→            body: formData,
+  1290→  1290→          })
+  1291→  1291→
+  1292→  1292→          if (response.ok) {
+  1293→  1293→            const data = await response.json()
+  1294→  1294→            if (data.success && data.memory) {
+  1295→  1295→              addMemory(data.memory as Memory)
+  1296→  1296→            }
+  1297→  1297→            setCaptureText('')
+  1298→  1298→            setImagePreview(null)
+  1299→  1299→            if (fileInputRef.current) fileInputRef.current.value = ''
+  1300→  1300→            toast.success('Voice memory captured')
+  1301→  1301→          } else {
+  1302→  1302→            toast.error('Voice capture failed')
+  1303→  1303→          }
+  1304→  1304→        } catch {
+  1305→  1305→          toast.error('Voice capture failed')
+  1306→  1306→        } finally {
+  1307→  1307→          setIsTranscribing(false)
+  1308→  1308→        }
+  1309→  1309→      }
+  1310→  1310→
+  1311→  1311→      mediaRecorderRef.current = mediaRecorder
+  1312→  1312→      mediaRecorder.start()
+  1313→  1313→      setIsRecording(true)
+  1314→  1314→    } catch {
+  1315→  1315→      toast.error('Microphone access denied')
+  1316→  1316→    }
+  1317→  1317→  }, [captureText, addMemory])
+  1318→  1318→
+  1319→  1319→  const stopRecording = useCallback(() => {
+  1320→  1320→    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+  1321→  1321→      mediaRecorderRef.current.stop()
+  1322→  1322→      setIsRecording(false)
+  1323→  1323→    }
+  1324→  1324→  }, [])
+  1325→  1325→
+  1326→  1326→  // ── IMAGE UPLOAD ───────────────────────────────────────────────────
+  1327→  1327→  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  1328→  1328→    if (!gateCapture()) return
+  1329→  1329→    const file = e.target.files?.[0]
+  1330→  1330→    if (!file) return
+  1331→  1331→    if (!file.type.startsWith('image/')) {
+  1332→  1332→      toast.error('Only image files')
+  1333→  1333→      return
+  1334→  1334→    }
+  1335→  1335→    if (file.size > 10 * 1024 * 1024) {
+  1336→  1336→      toast.error('Under 10MB')
+  1337→  1337→      return
+  1338→  1338→    }
+  1339→  1339→    const url = URL.createObjectURL(file)
+  1340→  1340→    setImagePreview({ file, url, name: file.name })
+  1341→  1341→  }, [gateCapture])
+  1342→  1342→
+  1343→  1343→  const removeImage = useCallback(() => {
+  1344→  1344→    if (imagePreview) URL.revokeObjectURL(imagePreview.url)
+  1345→  1345→    setImagePreview(null)
+  1346→  1346→    if (fileInputRef.current) fileInputRef.current.value = ''
+  1347→  1347→  }, [imagePreview])
+  1348→  1348→
+  1349→  1349→  // ── INSPECTION DRAWER ──────────────────────────────────────────────
+  1350→  1350→  const openDrawer = useCallback((memory: Memory) => {
+  1351→  1351→    setSelectedMemory(memory)
+  1352→  1352→    setDrawerOpen(true)
+  1353→  1353→  }, [])
+  1354→  1354→
+  1355→  1355→  const closeDrawer = useCallback(() => {
+  1356→  1356→    setDrawerOpen(false)
+  1357→  1357→    setTimeout(() => setSelectedMemory(null), 300)
+  1358→  1358→  }, [])
+  1359→  1359→
+  1360→  1360→  // ── PURGE MEMORY ───────────────────────────────────────────────────
+  1361→  1361→  const handlePurge = useCallback(async (id: string) => {
+  1362→  1362→    try {
+  1363→  1363→      await fetch(`/api/capture?id=${id}`, { method: 'DELETE' })
+  1364→  1364→    } catch {
+  1365→  1365→      // Fallback: try the store's delete method
+  1366→  1366→    }
+  1367→  1367→    try {
+  1368→  1368→      await deleteMemoryFromDB(id)
+  1369→  1369→    } catch {
+  1370→  1370→      // Continue anyway
+  1371→  1371→    }
+  1372→  1372→    deleteMemory(id)
+  1373→  1373→    closeDrawer()
+  1374→  1374→    toast.success('Memory purged')
+  1375→  1375→  }, [deleteMemory, deleteMemoryFromDB, closeDrawer])
+  1376→  1376→
+  1377→  1377→  // ── DOWNLOAD MARKDOWN ──────────────────────────────────────────────
+  1378→  1378→  const handleDownload = useCallback((memory: Memory) => {
+  1379→  1379→    downloadMemoryAsMarkdown(memory)
+  1380→  1380→    toast.success('Downloaded as markdown')
+  1381→  1381→  }, [])
+  1382→  1382→
+  1383→  1383→  // ── Keyboard handler ───────────────────────────────────────────────
+  1384→  1384→  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  1385→  1385→    if (e.key === 'Enter' && !e.shiftKey) {
+  1386→  1386→      e.preventDefault()
+  1387→  1387→      handleCaptureSubmit()
+  1388→  1388→    }
+  1389→  1389→  }, [handleCaptureSubmit])
+  1390→  1390→
+  1391→  1391→  return (
+  1392→  1392→    <div className="flex flex-col min-h-0 flex-1">
+  1393→  1393→      {/* ── CAPTURE BAR ──────────────────────────────────────────────── */}
+  1394→  1394→      <div className="mb-6">
+  1395→  1395→        <div className={cn(
+  1396→  1396→          'relative bg-white border border-black/[0.04] shadow-sm rounded-2xl p-2 transition-all duration-300',
+  1397→  1397→          isRecording && 'border-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.15)]',
+  1398→  1398→          showCaptureAnimation && 'animate-capture-fade-up'
+  1399→  1399→        )}>
+  1400→  1400→          {/* Image preview */}
+  1401→  1401→          {imagePreview && (
+  1402→  1402→            <div className="relative mx-2 mb-2 inline-block">
+  1403→  1403→              <img
+  1404→  1404→                src={imagePreview.url}
+  1405→  1405→                alt="Upload preview"
+  1406→  1406→                className="h-20 rounded-lg object-cover"
+  1407→  1407→              />
+  1408→  1408→              <button
+  1409→  1409→                onClick={removeImage}
+  1410→  1410→                className="absolute -top-1.5 -right-1.5 size-5 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs shadow-sm hover:bg-gray-800"
+  1411→  1411→              >
+  1412→  1412→                <X className="size-3" />
+  1413→  1413→              </button>
+  1414→  1414→            </div>
+  1415→  1415→          )}
+  1416→  1416→
+  1417→  1417→          <div className="flex items-center gap-2">
+  1418→  1418→            {/* Mic button */}
+  1419→  1419→            <button
+  1420→  1420→              onClick={handleMicClick}
+  1421→  1421→              disabled={isSaving || isTranscribing}
+  1422→  1422→              className={cn(
+  1423→  1423→                'size-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
+  1424→  1424→                isRecording
+  1425→  1425→                  ? 'bg-purple-500 text-white shadow-[0_0_16px_rgba(168,85,247,0.3)]'
+  1426→  1426→                  : 'bg-gray-50 text-gray-400 hover:bg-purple-50 hover:text-purple-500'
+  1427→  1427→              )}
+  1428→  1428→            >
+  1429→  1429→              {isTranscribing ? (
+  1430→  1430→                <Loader2 className="size-4 animate-spin" />
+  1431→  1431→              ) : isRecording ? (
+  1432→  1432→                <MicOff className="size-4" />
+  1433→  1433→              ) : (
+  1434→  1434→                <Mic className="size-4" />
+  1435→  1435→              )}
+  1436→  1436→            </button>
+  1437→  1437→
+  1438→  1438→            {/* Text input */}
+  1439→  1439→            <input
+  1440→  1440→              ref={inputRef}
+  1441→  1441→              type="text"
+  1442→  1442→              value={captureText}
+  1443→  1443→              onChange={(e) => setCaptureText(e.target.value)}
+  1444→  1444→              onKeyDown={handleKeyDown}
+  1445→  1445→              placeholder={isRecording ? 'Recording...' : isTranscribing ? 'Transcribing...' : 'Capture a thought, paste a link, or type anything...'}
+  1446→  1446→              disabled={isSaving || isTranscribing}
+  1447→  1447→              className="flex-1 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none min-w-0 disabled:opacity-50"
+  1448→  1448→            />
+  1449→  1449→
+  1450→  1450→            {/* Image upload button */}
+  1451→  1451→            <button
+  1452→  1452→              onClick={() => fileInputRef.current?.click()}
+  1453→  1453→              disabled={isSaving || isTranscribing}
+  1454→  1454→              className="size-10 rounded-xl flex items-center justify-center shrink-0 bg-gray-50 text-gray-400 hover:bg-purple-50 hover:text-purple-500 transition-all duration-200 disabled:opacity-50"
+  1455→  1455→            >
+  1456→  1456→              <ImageIcon className="size-4" />
+  1457→  1457→            </button>
+  1458→  1458→            <input
+  1459→  1459→              ref={fileInputRef}
+  1460→  1460→              type="file"
+  1461→  1461→              accept="image/*"
+  1462→  1462→              onChange={handleImageSelect}
+  1463→  1463→              className="hidden"
+  1464→  1464→            />
+  1465→  1465→
+  1466→  1466→            {/* Send button */}
+  1467→  1467→            <button
+  1468→  1468→              onClick={handleCaptureSubmit}
+  1469→  1469→              disabled={isSaving || isTranscribing || (!captureText.trim() && !imagePreview)}
+  1470→  1470→              className={cn(
+  1471→  1471→                'size-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200',
+  1472→  1472→                (captureText.trim() || imagePreview)
+  1473→  1473→                  ? 'bg-gray-900 hover:bg-gray-800 text-white'
+  1474→  1474→                  : 'bg-gray-100 text-gray-400'
+  1475→  1475→              )}
+  1476→  1476→            >
+  1477→  1477→              {isSaving ? (
+  1478→  1478→                <Loader2 className="size-4 animate-spin" />
+  1479→  1479→              ) : (
+  1480→  1480→                <Send className="size-4" />
+  1481→  1481→              )}
+  1482→  1482→            </button>
+  1483→  1483→          </div>
+  1484→  1484→        </div>
+  1485→  1485→
+  1486→  1486→        {/* Recording indicator */}
+  1487→  1487→        {isRecording && (
+  1488→  1488→          <motion.div
+  1489→  1489→            initial={{ opacity: 0, y: -4 }}
+  1490→  1490→            animate={{ opacity: 1, y: 0 }}
+  1491→  1491→            className="mt-2 flex items-center gap-2 text-xs text-purple-600"
+  1492→  1492→          >
+  1493→  1493→            <span className="size-2 rounded-full bg-purple-500 animate-pulse" />
+  1494→  1494→            Recording... tap mic to stop
+  1495→  1495→          </motion.div>
+  1496→  1496→        )}
+  1497→  1497→        {isTranscribing && (
+  1498→  1498→          <motion.div
+  1499→  1499→            initial={{ opacity: 0, y: -4 }}
+  1500→  1500→            animate={{ opacity: 1, y: 0 }}
+  1501→  1501→            className="mt-2 flex items-center gap-2 text-xs text-purple-600"
+  1502→  1502→          >
+  1503→  1503→            <Loader2 className="size-3 animate-spin" />
+  1504→  1504→            Transcribing audio...
+  1505→  1505→          </motion.div>
+  1506→  1506→        )}
+  1507→  1507→      </div>
+  1508→  1508→
+  1509→  1509→      {/* ── MEMORY TIMELINE ──────────────────────────────────────────── */}
+  1510→  1510→      <div className="flex-1 min-h-0">
+  1511→  1511→        {isLoading && sortedMemories.length === 0 ? (
+  1512→  1512→          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+  1513→  1513→            <Loader2 className="size-6 animate-spin mb-3" />
+  1514→  1514→            <p className="text-sm">Loading memories...</p>
+  1515→  1515→          </div>
+  1516→  1516→        ) : sortedMemories.length === 0 ? (
+  1517→  1517→          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+  1518→  1518→            <Brain className="size-8 mb-3 text-gray-300" />
+  1519→  1519→            <p className="text-sm font-medium text-gray-500 mb-1">No memories yet</p>
+  1520→  1520→            <p className="text-xs text-gray-400">Capture your first thought above</p>
+  1521→  1521→          </div>
+  1522→  1522→        ) : (
+  1523→  1523→          <div className="space-y-2 max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
+  1524→  1524→            <AnimatePresence mode="popLayout">
+  1525→  1525→              {sortedMemories.map((memory) => (
+  1526→  1526→                <MemoryCard
+  1527→  1527→                  key={memory.id}
+  1528→  1528→                  memory={memory}
+  1529→  1529→                  onClick={() => openDrawer(memory)}
+  1530→  1530→                />
+  1531→  1531→              ))}
+  1532→  1532→            </AnimatePresence>
+  1533→  1533→          </div>
+  1534→  1534→        )}
+  1535→  1535→      </div>
+  1536→  1536→
+  1537→  1537→      {/* ── INSPECTION DRAWER ────────────────────────────────────────── */}
+  1538→  1538→      <InspectionDrawer
+  1539→  1539→        memory={selectedMemory}
+  1540→  1540→        open={drawerOpen}
+  1541→  1541→        onClose={closeDrawer}
+  1542→  1542→        onPurge={handlePurge}
+  1543→  1543→        onDownload={handleDownload}
+  1544→  1544→      />
+  1545→  1545→
+  1546→  1546→      {/* ── MOBILE AUTH DRAWER ───────────────────────────────────────── */}
+  1547→  1547→      {isMobile && (
+  1548→  1548→        <MobileAuthDrawer
+  1549→  1549→          open={showMobileAuth}
+  1550→  1550→          onClose={() => setShowMobileAuth(false)}
+  1551→  1551→        />
+  1552→  1552→      )}
+  1553→  1553→    </div>
+  1554→  1554→  )
+  1555→  1555→}
+  1556→  1556→
+  1557→  1557→// ═══════════════════════════════════════════════════════════════════════
+  1558→  1558→// ─── APP SHELL (NAVIGATION) ──────────────────────────────────────────
+  1559→  1559→// ═══════════════════════════════════════════════════════════════════════
+  1560→  1560→
+  1561→  1561→type AppView = 'dashboard' | 'ask' | 'collections' | 'settings'
+  1562→  1562→
+  1563→  1563→const navItems: { view: AppView; icon: React.ElementType; label: string }[] = [
+  1564→  1564→  { view: 'dashboard', icon: HomeIcon, label: 'Home' },
+  1565→  1565→  { view: 'ask', icon: Search, label: 'Ask' },
+  1566→  1566→  { view: 'collections', icon: Layers, label: 'Collections' },
+  1567→  1567→  { view: 'settings', icon: Settings, label: 'Settings' },
+  1568→  1568→]
+  1569→  1569→
+  1570→  1570→function AppShell({ children }: { children: React.ReactNode }) {
+  1571→  1571→  const { isAuthenticated, logout, setShowAuthModal } = useAetherStore()
+  1572→  1572→  const isMobile = useIsMobile()
+  1573→  1573→  const [currentView, setCurrentView] = useState<AppView>('dashboard')
+  1574→  1574→
+  1575→  1575→  const handleSignOut = async () => {
+  1576→  1576→    await logout()
+  1577→  1577→    toast.success('Signed out')
+  1578→  1578→  }
+  1579→  1579→
+  1580→  1580→  const views: Record<AppView, React.ReactNode> = {
+  1581→  1581→    dashboard: <DashboardView />,
+  1582→  1582→    ask: <SimpleAskView />,
+  1583→  1583→    collections: <SimpleCollectionsView />,
+  1584→  1584→    settings: <SimpleSettingsView onSignOut={handleSignOut} isAuthenticated={isAuthenticated} onSignIn={() => setShowAuthModal(true)} />,
+  1585→  1585→  }
+  1586→  1586→
+  1587→  1587→  return (
+  1588→  1588→    <div className="min-h-screen flex flex-col bg-[#F9FAFB] relative overflow-hidden">
+  1589→  1589→      <div className="relative z-10 flex flex-1 min-h-0">
+  1590→  1590→        {/* Desktop Sidebar */}
+  1591→  1591→        {!isMobile && (
+  1592→  1592→          <aside className="h-screen fixed left-0 top-0 z-40 w-14 flex flex-col bg-white/50 backdrop-blur-xl border-r border-black/[0.03]">
+  1593→  1593→            <div className="flex items-center justify-center h-14 shrink-0 border-b border-black/[0.03]">
+  1594→  1594→              <div className="size-9 rounded-xl bg-zinc-900 flex items-center justify-center">
+  1595→  1595→                <Brain className="size-5 text-white" />
+  1596→  1596→              </div>
+  1597→  1597→            </div>
+  1598→  1598→
+  1599→  1599→            <nav className="flex-1 py-3 flex flex-col items-center gap-1 px-0">
+  1600→  1600→              {navItems.map((item) => {
+  1601→  1601→                const isActive = currentView === item.view
+  1602→  1602→                const Icon = item.icon
+  1603→  1603→                return (
+  1604→  1604→                  <button
+  1605→  1605→                    key={item.view}
+  1606→  1606→                    onClick={() => setCurrentView(item.view)}
+  1607→  1607→                    className={cn(
+  1608→  1608→                      'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
+  1609→  1609→                      isActive
+  1610→  1610→                        ? 'bg-purple-50 text-purple-600'
+  1611→  1611→                        : 'text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60'
+  1612→  1612→                    )}
+  1613→  1613→                    title={item.label}
+  1614→  1614→                  >
+  1615→  1615→                    <Icon className="size-5" />
+  1616→  1616→                  </button>
+  1617→  1617→                )
+  1618→  1618→              })}
+  1619→  1619→            </nav>
+  1620→  1620→
+  1621→  1621→            <div className="py-3 flex flex-col items-center shrink-0 border-t border-black/[0.03]">
+  1622→  1622→              {isAuthenticated ? (
+  1623→  1623→                <button
+  1624→  1624→                  onClick={handleSignOut}
+  1625→  1625→                  className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60 transition-all duration-200"
+  1626→  1626→                  title="Sign Out"
+  1627→  1627→                >
+  1628→  1628→                  <LogOut className="size-5" />
+  1629→  1629→                </button>
+  1630→  1630→              ) : (
+  1631→  1631→                <button
+  1632→  1632→                  onClick={() => setShowAuthModal(true)}
+  1633→  1633→                  className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100/60 transition-all duration-200"
+  1634→  1634→                  title="Sign In"
+  1635→  1635→                >
+  1636→  1636→                  <LogIn className="size-5" />
+  1637→  1637→                </button>
+  1638→  1638→              )}
+  1639→  1639→            </div>
+  1640→  1640→          </aside>
+  1641→  1641→        )}
+  1642→  1642→
+  1643→  1643→        {/* Main Content */}
+  1644→  1644→        <main className="flex-1 flex flex-col min-h-0 transition-all duration-300 md:ml-14">
+  1645→  1645→          {/* Mobile header */}
+  1646→  1646→          {isMobile && (
+  1647→  1647→            <div className="flex items-center justify-between px-4 h-12 shrink-0 bg-white/50 backdrop-blur-xl border-b border-black/[0.03]">
+  1648→  1648→              <div className="size-8 rounded-lg bg-zinc-900 flex items-center justify-center">
+  1649→  1649→                <Brain className="size-4 text-white" />
+  1650→  1650→              </div>
+  1651→  1651→              <div className="flex items-center gap-2">
+  1652→  1652→                {isAuthenticated ? (
+  1653→  1653→                  <button
+  1654→  1654→                    onClick={handleSignOut}
+  1655→  1655→                    className="size-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700"
+  1656→  1656→                  >
+  1657→  1657→                    <LogOut className="size-4" />
+  1658→  1658→                  </button>
+  1659→  1659→                ) : (
+  1660→  1660→                  <button
+  1661→  1661→                    onClick={() => setShowAuthModal(true)}
+  1662→  1662→                    className="size-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-zinc-700"
+  1663→  1663→                  >
+  1664→  1664→                    <LogIn className="size-4" />
+  1665→  1665→                  </button>
+  1666→  1666→                )}
+  1667→  1667→              </div>
+  1668→  1668→            </div>
+  1669→  1669→          )}
+  1670→  1670→
+  1671→  1671→          <div className="flex-1 overflow-y-auto">
+  1672→  1672→            <AnimatePresence mode="wait">
+  1673→  1673→              <motion.div
+  1674→  1674→                key={currentView}
+  1675→  1675→                initial={{ opacity: 0, y: 8 }}
+  1676→  1676→                animate={{ opacity: 1, y: 0 }}
+  1677→  1677→                exit={{ opacity: 0, y: -8 }}
+  1678→  1678→                transition={{ duration: 0.2, ease: 'easeInOut' }}
+  1679→  1679→                className="p-4 md:p-6 lg:p-10"
+  1680→  1680→              >
+  1681→  1681→                {views[currentView]}
+  1682→  1682→              </motion.div>
+  1683→  1683→            </AnimatePresence>
+  1684→  1684→          </div>
+  1685→  1685→        </main>
+  1686→  1686→      </div>
+  1687→  1687→
+  1688→  1688→      {/* Mobile Bottom Nav */}
+  1689→  1689→      {isMobile && (
+  1690→  1690→        <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/50 backdrop-blur-xl border-t border-black/[0.03]">
+  1691→  1691→          <div className="flex items-center justify-around h-14 px-2">
+  1692→  1692→            {navItems.map((item) => {
+  1693→  1693→              const isActive = currentView === item.view
+  1694→  1694→              const Icon = item.icon
+  1695→  1695→              return (
+  1696→  1696→                <button
+  1697→  1697→                  key={item.view}
+  1698→  1698→                  onClick={() => setCurrentView(item.view)}
+  1699→  1699→                  className={cn(
+  1700→  1700→                    'flex items-center justify-center w-12 h-10 rounded-xl transition-all min-w-[44px] min-h-[44px]',
+  1701→  1701→                    isActive ? 'text-purple-600' : 'text-zinc-400'
+  1702→  1702→                  )}
+  1703→  1703→                >
+  1704→  1704→                  <Icon className="size-5" />
+  1705→  1705→                </button>
+  1706→  1706→              )
+  1707→  1707→            })}
+  1708→  1708→          </div>
+  1709→  1709→          <div className="h-[env(safe-area-inset-bottom)]" />
+  1710→  1710→        </nav>
+  1711→  1711→      )}
+  1712→  1712→
+  1713→  1713→      {/* Global Auth Drawer (for non-mobile navigation sign-in) */}
+  1714→  1714→      <GlobalAuthDrawer />
+  1715→  1715→    </div>
+  1716→  1716→  )
+  1717→  1717→}
+  1718→  1718→
+  1719→  1719→// ═══════════════════════════════════════════════════════════════════════
+  1720→  1720→// ─── GLOBAL AUTH DRAWER ──────────────────────────────────────────────
+  1721→  1721→// ═══════════════════════════════════════════════════════════════════════
+  1722→  1722→
+  1723→  1723→function GlobalAuthDrawer() {
+  1724→  1724→  const { showAuthModal, setShowAuthModal, login, signup } = useAetherStore()
+  1725→  1725→  const isMobile = useIsMobile()
+  1726→  1726→  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  1727→  1727→  const [isLoading, setIsLoading] = useState(false)
+  1728→  1728→  const [email, setEmail] = useState('')
+  1729→  1729→  const [password, setPassword] = useState('')
+  1730→  1730→  const [name, setName] = useState('')
+  1731→  1731→
+  1732→  1732→  const resetForm = () => {
+  1733→  1733→    setEmail('')
+  1734→  1734→    setPassword('')
+  1735→  1735→    setName('')
+  1736→  1736→    setIsLoading(false)
+  1737→  1737→  }
+  1738→  1738→
+  1739→  1739→  const handleClose = () => {
+  1740→  1740→    setShowAuthModal(false)
+  1741→  1741→    setTimeout(resetForm, 200)
+  1742→  1742→  }
+  1743→  1743→
+  1744→  1744→  const handleSubmit = async (e: React.FormEvent) => {
+  1745→  1745→    e.preventDefault()
+  1746→  1746→    if (!email.trim() || !password.trim()) {
+  1747→  1747→      toast.error('Please fill in email and password')
+  1748→  1748→      return
+  1749→  1749→    }
+  1750→  1750→    if (mode === 'signup' && password.length < 6) {
+  1751→  1751→      toast.error('Password must be at least 6 characters')
+  1752→  1752→      return
+  1753→  1753→    }
+  1754→  1754→
+  1755→  1755→    setIsLoading(true)
+  1756→  1756→    try {
+  1757→  1757→      const success = mode === 'login'
+  1758→  1758→        ? await login(email.trim(), password)
+  1759→  1759→        : await signup(email.trim(), password, name.trim())
+  1760→  1760→
+  1761→  1761→      if (success) {
+  1762→  1762→        toast.success(mode === 'login' ? 'Welcome back!' : 'Account created!')
+  1763→  1763→        handleClose()
+  1764→  1764→      } else {
+  1765→  1765→        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed. Email may already be in use.')
+  1766→  1766→      }
+  1767→  1767→    } catch {
+  1768→  1768→      toast.error('Something went wrong. Please try again.')
+  1769→  1769→    } finally {
+  1770→  1770→      setIsLoading(false)
+  1771→  1771→    }
+  1772→  1772→  }
+  1773→  1773→
+  1774→  1774→  const formContent = (
+  1775→  1775→    <form onSubmit={handleSubmit} className="space-y-5">
+  1776→  1776→      {mode === 'signup' && (
+  1777→  1777→        <input
+  1778→  1778→          type="text"
+  1779→  1779→          placeholder="Name"
+  1780→  1780→          value={name}
+  1781→  1781→          onChange={(e) => setName(e.target.value)}
+  1782→  1782→          disabled={isLoading}
+  1783→  1783→          className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+  1784→  1784→        />
+  1785→  1785→      )}
+  1786→  1786→      <input
+  1787→  1787→        type="email"
+  1788→  1788→        placeholder="Email"
+  1789→  1789→        value={email}
+  1790→  1790→        onChange={(e) => setEmail(e.target.value)}
+  1791→  1791→        disabled={isLoading}
+  1792→  1792→        autoFocus
+  1793→  1793→        className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+  1794→  1794→      />
+  1795→  1795→      <input
+  1796→  1796→        type="password"
+  1797→  1797→        placeholder="Password"
+  1798→  1798→        value={password}
+  1799→  1799→        onChange={(e) => setPassword(e.target.value)}
+  1800→  1800→        disabled={isLoading}
+  1801→  1801→        className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+  1802→  1802→      />
+  1803→  1803→      <button
+  1804→  1804→        type="submit"
+  1805→  1805→        disabled={isLoading}
+  1806→  1806→        className={cn(
+  1807→  1807→          'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-10 font-medium text-sm transition-colors',
+  1808→  1808→          'disabled:opacity-50 disabled:cursor-not-allowed'
+  1809→  1809→        )}
+  1810→  1810→      >
+  1811→  1811→        {isLoading ? (
+  1812→  1812→          <Loader2 className="size-4 animate-spin" />
+  1813→  1813→        ) : (
+  1814→  1814→          mode === 'login' ? 'Sign In' : 'Create Account'
+  1815→  1815→        )}
+  1816→  1816→      </button>
+  1817→  1817→    </form>
+  1818→  1818→  )
+  1819→  1819→
+  1820→  1820→  const modeSwitch = (
+  1821→  1821→    <div className="mt-6 text-center">
+  1822→  1822→      <button
+  1823→  1823→        onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+  1824→  1824→        className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
+  1825→  1825→        disabled={isLoading}
+  1826→  1826→      >
+  1827→  1827→        {mode === 'login' ? 'Sign up' : 'Sign in'}
+  1828→  1828→      </button>
+  1829→  1829→    </div>
+  1830→  1830→  )
+  1831→  1831→
+  1832→  1832→  const closeButton = (
+  1833→  1833→    <button
+  1834→  1834→      onClick={handleClose}
+  1835→  1835→      className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+  1836→  1836→    >
+  1837→  1837→      <X className="size-4" />
+  1838→  1838→    </button>
+  1839→  1839→  )
+  1840→  1840→
+  1841→  1841→  return (
+  1842→  1842→    <AnimatePresence>
+  1843→  1843→      {showAuthModal && (
+  1844→  1844→        <>
+  1845→  1845→          <motion.div
+  1846→  1846→            initial={{ opacity: 0 }}
+  1847→  1847→            animate={{ opacity: 1 }}
+  1848→  1848→            exit={{ opacity: 0 }}
+  1849→  1849→            transition={{ duration: 0.2 }}
+  1850→  1850→            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
+  1851→  1851→            onClick={handleClose}
+  1852→  1852→          />
+  1853→  1853→
+  1854→  1854→          {isMobile ? (
+  1855→  1855→            <motion.div
+  1856→  1856→              initial={{ y: '100%' }}
+  1857→  1857→              animate={{ y: 0 }}
+  1858→  1858→              exit={{ y: '100%' }}
+  1859→  1859→              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+  1860→  1860→              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
+  1861→  1861→              onClick={(e) => e.stopPropagation()}
+  1862→  1862→            >
+  1863→  1863→              <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
+  1864→  1864→              <div className="flex justify-end mb-2">{closeButton}</div>
+  1865→  1865→              {formContent}
+  1866→  1866→              {modeSwitch}
+  1867→  1867→            </motion.div>
+  1868→  1868→          ) : (
+  1869→  1869→            <motion.div
+  1870→  1870→              initial={{ opacity: 0, scale: 0.97 }}
+  1871→  1871→              animate={{ opacity: 1, scale: 1 }}
+  1872→  1872→              exit={{ opacity: 0, scale: 0.97 }}
+  1873→  1873→              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+  1874→  1874→              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+  1875→  1875→              onClick={handleClose}
+  1876→  1876→            >
+  1877→  1877→              <div
+  1878→  1878→                className="relative w-full max-w-sm bg-white border border-black/[0.04] shadow-[0_8px_40px_rgb(0,0,0,0.03)] rounded-2xl p-12"
+  1879→  1879→                onClick={(e) => e.stopPropagation()}
+  1880→  1880→              >
+  1881→  1881→                <div className="absolute top-4 right-4">{closeButton}</div>
+  1882→  1882→                {formContent}
+  1883→  1883→                {modeSwitch}
+  1884→  1884→              </div>
+  1885→  1885→            </motion.div>
+  1886→  1886→          )}
+  1887→  1887→        </>
+  1888→  1888→      )}
+  1889→  1889→    </AnimatePresence>
+  1890→  1890→  )
+  1891→  1891→}
+  1892→  1892→
+  1893→  1893→// ═══════════════════════════════════════════════════════════════════════
+  1894→  1894→// ─── SIMPLE VIEWS (Ask, Collections, Settings) ──────────────────────
+  1895→  1895→// ═══════════════════════════════════════════════════════════════════════
+  1896→  1896→
+  1897→  1897→function SimpleAskView() {
+  1898→  1898→  const { memories } = useAetherStore()
+  1899→  1899→  return (
+  1900→  1900→    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+  1901→  1901→      <Search className="size-8 mb-3 text-gray-300" />
+  1902→  1902→      <p className="text-sm font-medium text-gray-500 mb-1">Ask Aether</p>
+  1903→  1903→      <p className="text-xs text-gray-400">Search across {memories.length} memories</p>
+  1904→  1904→    </div>
+  1905→  1905→  )
+  1906→  1906→}
+  1907→  1907→
+  1908→  1908→function SimpleCollectionsView() {
+  1909→  1909→  const { collections } = useAetherStore()
+  1910→  1910→  return (
+  1911→  1911→    <div>
+  1912→  1912→      <h2 className="text-lg font-semibold text-gray-900 mb-4">Collections</h2>
+  1913→  1913→      {collections.length === 0 ? (
+  1914→  1914→        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+  1915→  1915→          <Layers className="size-8 mb-3 text-gray-300" />
+  1916→  1916→          <p className="text-sm font-medium text-gray-500 mb-1">No collections yet</p>
+  1917→  1917→          <p className="text-xs text-gray-400">Collections auto-create when 10+ memories share tags</p>
+  1918→  1918→        </div>
+  1919→  1919→      ) : (
+  1920→  1920→        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+  1921→  1921→          {collections.map((c) => (
+  1922→  1922→            <div
+  1923→  1923→              key={c.id}
+  1924→  1924→              className="bg-white border border-black/[0.04] rounded-xl p-4 hover:shadow-sm transition-shadow"
+  1925→  1925→            >
+  1926→  1926→              <div className="flex items-center gap-2 mb-2">
+  1927→  1927→                <span className="text-lg">{c.icon}</span>
+  1928→  1928→                <span className="text-sm font-medium text-gray-900 truncate">{c.name}</span>
+  1929→  1929→              </div>
+  1930→  1930→              <p className="text-xs text-gray-400">{c.memoryCount} memories</p>
+  1931→  1931→            </div>
+  1932→  1932→          ))}
+  1933→  1933→        </div>
+  1934→  1934→      )}
+  1935→  1935→    </div>
+  1936→  1936→  )
+  1937→  1937→}
+  1938→  1938→
+  1939→  1939→function SimpleSettingsView({
+  1940→  1940→  onSignOut,
+  1941→  1941→  isAuthenticated,
+  1942→  1942→  onSignIn,
+  1943→  1943→}: {
+  1944→  1944→  onSignOut: () => void
+  1945→  1945→  isAuthenticated: boolean
+  1946→  1946→  onSignIn: () => void
+  1947→  1947→}) {
+  1948→  1948→  const { user } = useAetherStore()
+  1949→  1949→  return (
+  1950→  1950→    <div>
+  1951→  1951→      <h2 className="text-lg font-semibold text-gray-900 mb-4">Settings</h2>
+  1952→  1952→      <div className="bg-white border border-black/[0.04] rounded-xl p-6 space-y-4">
+  1953→  1953→        {isAuthenticated && user ? (
+  1954→  1954→          <>
+  1955→  1955→            <div className="flex items-center gap-3">
+  1956→  1956→              <div className="size-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-semibold text-sm">
+  1957→  1957→                {(user.name || user.email || 'U').charAt(0).toUpperCase()}
+  1958→  1958→              </div>
+  1959→  1959→              <div>
+  1960→  1960→                <p className="text-sm font-medium text-gray-900">{user.name || 'User'}</p>
+  1961→  1961→                <p className="text-xs text-gray-400">{user.email}</p>
+  1962→  1962→              </div>
+  1963→  1963→            </div>
+  1964→  1964→            <button
+  1965→  1965→              onClick={onSignOut}
+  1966→  1966→              className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl h-10 font-medium text-sm transition-colors"
+  1967→  1967→            >
+  1968→  1968→              <LogOut className="size-4" />
+  1969→  1969→              Sign Out
+  1970→  1970→            </button>
+  1971→  1971→          </>
+  1972→  1972→        ) : (
+  1973→  1973→          <div>
+  1974→  1974→            <p className="text-sm text-gray-500 mb-3">Sign in to sync your memories across devices</p>
+  1975→  1975→            <button
+  1976→  1976→              onClick={onSignIn}
+  1977→  1977→              className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl h-10 font-medium text-sm transition-colors"
+  1978→  1978→            >
+  1979→  1979→              <LogIn className="size-4" />
+  1980→  1980→              Sign In
+  1981→  1981→            </button>
+  1982→  1982→          </div>
+  1983→  1983→        )}
+  1984→  1984→      </div>
+  1985→  1985→    </div>
+  1986→  1986→  )
+  1987→  1987→}
+  1988→  1988→
+  1989→  1989→// ═══════════════════════════════════════════════════════════════════════
+  1990→  1990→// ─── MAIN HOME COMPONENT ─────────────────────────────────────────────
+  1991→  1991→// ═══════════════════════════════════════════════════════════════════════
+  1992→  1992→
+  1993→  1993→export default function Home() {
+  1994→  1994→  const { checkSession, fetchMemories, fetchCollections, isAuthenticated } = useAetherStore()
+  1995→  1995→  const isMobile = useIsMobile()
+  1996→  1996→  const [showDashboard, setShowDashboard] = useState(false)
+  1997→  1997→
+  1998→  1998→  useEffect(() => {
+  1999→  1999→    checkSession()
+  2000→  2000→    fetchMemories()
+
+[showing lines 1-2000 of 2002; use offset=2001 with limit to continue reading]
