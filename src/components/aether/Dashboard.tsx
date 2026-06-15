@@ -44,12 +44,154 @@ const typeIconMap: Record<string, React.ElementType> = {
   note: FileText,
 }
 
+// ─── Mobile Auth Drawer (built into Dashboard) ─────────────────────
+
+function MobileAuthDrawer({
+  open,
+  onClose,
+}: {
+  open: boolean
+  onClose: () => void
+}) {
+  const { login, signup } = useAetherStore()
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [isLoading, setIsLoading] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+
+  const resetForm = useCallback(() => {
+    setEmail('')
+    setPassword('')
+    setName('')
+    setIsLoading(false)
+  }, [])
+
+  const handleClose = useCallback(() => {
+    onClose()
+    setTimeout(resetForm, 300)
+  }, [onClose, resetForm])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email.trim() || !password.trim()) {
+      toast.error('Please fill in email and password')
+      return
+    }
+    if (mode === 'signup' && password.length < 6) {
+      toast.error('Password must be at least 6 characters')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      const success = mode === 'login'
+        ? await login(email.trim(), password)
+        : await signup(email.trim(), password, name.trim())
+
+      if (success) {
+        handleClose()
+      } else {
+        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed')
+      }
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-50"
+            onClick={handleClose}
+          />
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={handleClose}
+                className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {mode === 'signup' && (
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+                />
+              )}
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
+                autoFocus
+                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
+                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isLoading}
+                className={cn(
+                  'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-10 font-medium text-sm transition-colors',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
+                )}
+              >
+                {isLoading ? <Loader2 className="size-4 animate-spin" /> : mode === 'login' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
+                disabled={isLoading}
+              >
+                {mode === 'login' ? 'Sign up' : 'Sign in'}
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  )
+}
+
 // ─── Dashboard Component ────────────────────────────────────────────
 
 export function Dashboard() {
   const {
     memories,
     saveMemory,
+    addMemory,
     deleteMemoryFromDB,
     isLoading,
     isAuthenticated,
@@ -79,11 +221,14 @@ export function Dashboard() {
   // Paywall state
   const [showPaywall, setShowPaywall] = useState(false)
 
-  // Pending capture text for auth gate
+  // BUG 2 FIX: Mobile auth drawer state
+  const [isAuthDrawerOpen, setIsAuthDrawerOpen] = useState(false)
+
+  // Pending capture for auth gate
   const pendingCaptureTextRef = useRef<string>('')
   const pendingImageRef = useRef<{ file: File; url: string; name: string } | null>(null)
 
-  // Input ref for focus management
+  // Input ref
   const inputRef = useRef<HTMLInputElement>(null)
 
   // ── Fetch memories on mount ──────────────────────────────────────
@@ -98,7 +243,7 @@ export function Dashboard() {
     )
   }, [memories])
 
-  // ── Save handler ─────────────────────────────────────────────────
+  // ── BUG 1 FIX: Save with explicit optimistic state push ────────
   const handleSave = useCallback(async (text: string, imageFile: File | null = null) => {
     const trimmed = text.trim()
     if (!trimmed && !imageFile) return
@@ -110,7 +255,6 @@ export function Dashboard() {
       const detected = detectContentType(trimmed || 'image')
       const memoryType = mapToMemoryType(detected)
 
-      // If there's an image, upload it first
       let imageUrl: string | null = null
       if (imageFile) {
         try {
@@ -128,20 +272,17 @@ export function Dashboard() {
             imageUrl = uploadData.fileUrl || uploadData.imagePreview || null
           }
         } catch {
-          // If upload fails, continue without image URL
+          // continue without image URL
         }
       }
 
       const contentToSave = trimmed || (imageFile ? `Image: ${imageFile.name}` : '')
       const titleToSave = trimmed
-        ? trimmed.length > 80
-          ? trimmed.slice(0, 80) + '...'
-          : trimmed
-        : imageFile
-          ? `Image: ${imageFile.name}`
-          : ''
+        ? trimmed.length > 80 ? trimmed.slice(0, 80) + '...' : trimmed
+        : imageFile ? `Image: ${imageFile.name}` : ''
 
-      await saveMemory({
+      // Call saveMemory which persists to DB
+      const savedMemory = await saveMemory({
         type: imageFile ? 'image' : memoryType,
         title: titleToSave,
         content: contentToSave,
@@ -149,8 +290,11 @@ export function Dashboard() {
         ...(imageUrl ? { imageUrl } : {}),
       })
 
-      // DO NOT call fetchMemories() here — saveMemory already calls addMemory
-      // internally which updates the Zustand store. Let reactivity handle it.
+      // BUG 1 FIX: Explicitly push the saved memory to the top of the feed
+      // This guarantees the UI updates even if store reactivity is delayed
+      if (savedMemory) {
+        addMemory(savedMemory)
+      }
 
       setCaptureText('')
       setImagePreview(null)
@@ -166,16 +310,16 @@ export function Dashboard() {
       setIsSaving(false)
       setTimeout(() => setShowCaptureAnimation(false), 300)
     }
-  }, [saveMemory])
+  }, [saveMemory, addMemory])
 
-  // ── Auth-gated save ──────────────────────────────────────────────
+  // ── BUG 2 FIX: Auth-gated capture with mobile drawer ────────────
   const handleCaptureSubmit = useCallback(() => {
     const text = captureText
     const image = imagePreview
 
     if (!text.trim() && !image) return
 
-    // Check memory limit (paywall)
+    // Paywall check
     if (memories.length >= 10 && !isAuthenticated) {
       setShowPaywall(true)
       return
@@ -186,12 +330,16 @@ export function Dashboard() {
       pendingCaptureTextRef.current = text
       pendingImageRef.current = image
 
-      // Clear the input immediately for responsiveness
+      // Clear input immediately
       setCaptureText('')
       setImagePreview(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
 
-      // Queue the save action behind auth
+      // BUG 2 FIX: Show mobile auth drawer directly
+      setIsAuthDrawerOpen(true)
+
+      // Also use requireAuth so the store queues the pending action
+      // When login succeeds, the store will execute this callback
       requireAuth(async () => {
         const pendingText = pendingCaptureTextRef.current
         const pendingImage = pendingImageRef.current
@@ -207,6 +355,23 @@ export function Dashboard() {
 
     handleSave(text, image?.file ?? null)
   }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth, handleSave])
+
+  // ── BUG 2 FIX: Mic button auth gate ─────────────────────────────
+  const handleMicClick = useCallback(() => {
+    if (!isAuthenticated) {
+      setIsAuthDrawerOpen(true)
+      requireAuth(async () => {
+        // After auth, user can try recording again
+      })
+      return
+    }
+    // If authenticated, start/stop recording
+    if (isRecording) {
+      stopRecording()
+    } else {
+      startRecording()
+    }
+  }, [isAuthenticated, isRecording, requireAuth])
 
   // ── Voice recording ──────────────────────────────────────────────
   const startRecording = useCallback(async () => {
@@ -227,7 +392,6 @@ export function Dashboard() {
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop())
-
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         setIsTranscribing(true)
 
@@ -243,10 +407,7 @@ export function Dashboard() {
           if (res.ok) {
             const data = await res.json()
             if (data.text?.trim()) {
-              setCaptureText((prev) => {
-                const combined = prev ? `${prev} ${data.text.trim()}` : data.text.trim()
-                return combined
-              })
+              setCaptureText((prev) => prev ? `${prev} ${data.text.trim()}` : data.text.trim())
             }
           } else {
             toast.error('Transcription failed')
@@ -277,27 +438,20 @@ export function Dashboard() {
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    // Validate file type
     if (!file.type.startsWith('image/')) {
-      toast.error('Only image files are supported')
+      toast.error('Only image files')
       return
     }
-
-    // Validate file size (10MB)
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image must be under 10MB')
+      toast.error('Under 10MB')
       return
     }
-
     const url = URL.createObjectURL(file)
     setImagePreview({ file, url, name: file.name })
   }, [])
 
   const removeImage = useCallback(() => {
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview.url)
-    }
+    if (imagePreview) URL.revokeObjectURL(imagePreview.url)
     setImagePreview(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [imagePreview])
@@ -318,7 +472,6 @@ export function Dashboard() {
     try {
       await deleteMemoryFromDB(id)
       closeDrawer()
-      toast.success('Deleted')
     } catch {
       toast.error('Failed to delete')
     }
@@ -360,32 +513,21 @@ export function Dashboard() {
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -6 }}
-                      transition={{
-                        duration: 0.25,
-                        delay: staggerDelay,
-                        ease: 'easeOut',
-                      }}
+                      transition={{ duration: 0.2, delay: staggerDelay, ease: 'easeOut' }}
                       onClick={() => openDrawer(memory)}
                       className="w-full flex items-center gap-3 py-3.5 px-1 text-left group hover:bg-black/[0.015] rounded-lg transition-colors"
                     >
-                      {/* Type icon */}
                       <div className="shrink-0 size-8 flex items-center justify-center">
                         <IconComponent className="size-4 text-gray-300 group-hover:text-gray-400 transition-colors" />
                       </div>
-
-                      {/* Title + time */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-800 line-clamp-2 leading-snug">
                           {memory.title || memory.content}
                         </p>
                       </div>
-
-                      {/* Relative time */}
                       <span className="shrink-0 text-[11px] text-gray-300 tabular-nums">
                         {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
                       </span>
-
-                      {/* Chevron */}
                       <ChevronRight className="size-4 text-gray-200 group-hover:text-gray-300 shrink-0 transition-colors" />
                     </motion.button>
                   )
@@ -399,19 +541,6 @@ export function Dashboard() {
       {/* ── Capture Bar ─────────────────────────────────────────── */}
       <div className="shrink-0 px-4 pb-4 pt-2 md:px-0">
         <div className="max-w-2xl mx-auto">
-          {/* Capture animation overlay */}
-          <AnimatePresence>
-            {showCaptureAnimation && (
-              <motion.div
-                initial={{ opacity: 1, y: 0 }}
-                animate={{ opacity: 0, y: -12 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25, ease: 'easeInOut' }}
-                className="absolute pointer-events-none"
-              />
-            )}
-          </AnimatePresence>
-
           {/* Image preview pill */}
           <AnimatePresence>
             {imagePreview && (
@@ -422,18 +551,9 @@ export function Dashboard() {
                 transition={{ duration: 0.2 }}
                 className="mb-2 inline-flex items-center gap-2 bg-white/90 border border-black/[0.06] rounded-xl pl-1.5 pr-2.5 py-1.5 shadow-sm"
               >
-                <img
-                  src={imagePreview.url}
-                  alt={imagePreview.name}
-                  className="size-8 rounded-lg object-cover"
-                />
-                <span className="text-xs text-gray-500 max-w-[120px] truncate">
-                  {imagePreview.name}
-                </span>
-                <button
-                  onClick={removeImage}
-                  className="size-4 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors"
-                >
+                <img src={imagePreview.url} alt={imagePreview.name} className="size-8 rounded-lg object-cover" />
+                <span className="text-xs text-gray-500 max-w-[120px] truncate">{imagePreview.name}</span>
+                <button onClick={removeImage} className="size-4 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors">
                   <X className="size-3 text-gray-400" />
                 </button>
               </motion.div>
@@ -451,7 +571,7 @@ export function Dashboard() {
             <div className="flex items-center gap-1.5">
               {/* Mic button */}
               <button
-                onClick={isRecording ? stopRecording : startRecording}
+                onClick={handleMicClick}
                 disabled={isTranscribing || isSaving}
                 className={cn(
                   'size-9 rounded-xl flex items-center justify-center transition-all shrink-0',
@@ -525,7 +645,6 @@ export function Dashboard() {
       <AnimatePresence>
         {drawerOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -534,8 +653,6 @@ export function Dashboard() {
               className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-40"
               onClick={closeDrawer}
             />
-
-            {/* Drawer */}
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
@@ -545,7 +662,6 @@ export function Dashboard() {
             >
               {selectedMemory && (
                 <>
-                  {/* Drawer header */}
                   <div className="shrink-0 flex items-center justify-between px-6 h-14 border-b border-black/[0.04]">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <Clock className="size-3.5" />
@@ -559,14 +675,11 @@ export function Dashboard() {
                     </button>
                   </div>
 
-                  {/* Drawer body */}
                   <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-                    {/* Title */}
                     <h2 className="text-lg font-semibold text-gray-900 leading-snug">
                       {selectedMemory.title || selectedMemory.content}
                     </h2>
 
-                    {/* AI Recap */}
                     {selectedMemory.summary && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
@@ -579,39 +692,30 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {/* Image */}
-                    {(selectedMemory.imagePreview || selectedMemory.fileUrl) && (
+                    {selectedMemory.imageUrl && (
                       <div className="rounded-xl overflow-hidden border border-black/[0.04]">
-                        <img
-                          src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''}
-                          alt={selectedMemory.title}
-                          className="w-full object-cover max-h-64"
-                        />
+                        <img src={selectedMemory.imageUrl} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
                       </div>
                     )}
 
-                    {/* Tags */}
+                    {(selectedMemory.imagePreview || selectedMemory.fileUrl) && !selectedMemory.imageUrl && (
+                      <div className="rounded-xl overflow-hidden border border-black/[0.04]">
+                        <img src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
+                      </div>
+                    )}
+
                     {selectedMemory.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium"
-                          >
-                            {tag}
-                          </span>
+                          <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">{tag}</span>
                         ))}
                       </div>
                     )}
 
-                    {/* Collections */}
                     {selectedMemory.collections.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.collections.map((col) => (
-                          <span
-                            key={col.id}
-                            className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1"
-                          >
+                          <span key={col.id} className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1">
                             {col.icon && <span>{col.icon}</span>}
                             {col.name}
                           </span>
@@ -619,33 +723,24 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {/* Full content */}
                     {selectedMemory.content && selectedMemory.content !== selectedMemory.title && (
                       <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                         {selectedMemory.content}
                       </div>
                     )}
 
-                    {/* Source URL */}
                     {selectedMemory.sourceUrl && (
-                      <a
-                        href={selectedMemory.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all"
-                      >
+                      <a href={selectedMemory.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all">
                         <Link2 className="size-3 shrink-0" />
                         {selectedMemory.sourceUrl}
                       </a>
                     )}
 
-                    {/* Timestamp */}
                     <div className="text-[11px] text-gray-300">
                       {new Date(selectedMemory.createdAt).toLocaleString()}
                     </div>
                   </div>
 
-                  {/* Drawer footer */}
                   <div className="shrink-0 px-6 py-4 border-t border-black/[0.04]">
                     <button
                       onClick={() => handleDelete(selectedMemory.id)}
@@ -662,12 +757,14 @@ export function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* ── Paywall Modal ────────────────────────────────────────── */}
-      <PaywallModal
-        open={showPaywall}
-        onClose={() => setShowPaywall(false)}
-        isDark={false}
+      {/* ── BUG 2 FIX: Mobile Auth Drawer ────────────────────────── */}
+      <MobileAuthDrawer
+        open={isAuthDrawerOpen}
+        onClose={() => setIsAuthDrawerOpen(false)}
       />
+
+      {/* ── Paywall Modal ────────────────────────────────────────── */}
+      <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} isDark={false} />
     </div>
   )
 }
