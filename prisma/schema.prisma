@@ -13,6 +13,7 @@ model Memory {
   title        String   @default("")
   content      String   @default("")
   summary      String?
+  deepInsight  String?
   tags         String   @default("") // comma-separated
   sourceUrl    String?
   fileUrl      String?

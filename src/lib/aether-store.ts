@@ -8,6 +8,7 @@ export interface Memory {
   title: string
   content: string
   summary: string | null
+  deepInsight: string | null
   tags: string[]
   sourceUrl: string | null
   fileUrl: string | null
@@ -53,6 +54,7 @@ interface SupabaseMemoryRow {
   title: string
   content: string
   summary: string | null
+  deep_insight: string | null
   tags: string
   source_url: string | null
   file_url: string | null
@@ -82,6 +84,7 @@ function mapSupabaseMemory(row: SupabaseMemoryRow): Memory {
     title: row.title || '',
     content: row.content || '',
     summary: row.summary,
+    deepInsight: row.deep_insight || null,
     tags: row.tags ? row.tags.split(',').filter(Boolean) : [],
     sourceUrl: row.source_url,
     fileUrl: row.file_url,

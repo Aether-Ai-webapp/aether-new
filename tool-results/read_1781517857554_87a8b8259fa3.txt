@@ -1,0 +1,776 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+     4→import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+     5→import { formatDistanceToNow } from 'date-fns'
+     6→import { motion, AnimatePresence } from 'framer-motion'
+     7→import {
+     8→  Mic,
+     9→  MicOff,
+    10→  Send,
+    11→  X,
+    12→  Trash2,
+    13→  Link2,
+    14→  FileText,
+    15→  CheckCircle2,
+    16→  Brain,
+    17→  Clock,
+    18→  Image as ImageIcon,
+    19→  Loader2,
+    20→  ChevronRight,
+    21→  Sparkles,
+    22→} from 'lucide-react'
+    23→import { cn } from '@/lib/utils'
+    24→import { toast } from 'sonner'
+    25→import { PaywallModal } from '@/components/aether/PaywallModal'
+    26→
+    27→// ─── Helpers ────────────────────────────────────────────────────────
+    28→
+    29→function detectContentType(text: string): 'link' | 'task' | 'note' {
+    30→  const lower = text.toLowerCase()
+    31→  if (/https?:\/\//.test(lower) || /\bwww\./.test(lower)) return 'link'
+    32→  if (/\b(todo|remind|need to|buy|must)\b/.test(lower)) return 'task'
+    33→  return 'note'
+    34→}
+    35→
+    36→function mapToMemoryType(detected: 'link' | 'task' | 'note'): MemoryType {
+    37→  if (detected === 'link') return 'link'
+    38→  return 'text'
+    39→}
+    40→
+    41→const typeIconMap: Record<string, React.ElementType> = {
+    42→  link: Link2,
+    43→  task: CheckCircle2,
+    44→  note: FileText,
+    45→}
+    46→
+    47→// ─── Mobile Auth Drawer (built into Dashboard) ─────────────────────
+    48→
+    49→function MobileAuthDrawer({
+    50→  open,
+    51→  onClose,
+    52→}: {
+    53→  open: boolean
+    54→  onClose: () => void
+    55→}) {
+    56→  const { login, signup } = useAetherStore()
+    57→  const [mode, setMode] = useState<'login' | 'signup'>('login')
+    58→  const [isLoading, setIsLoading] = useState(false)
+    59→  const [email, setEmail] = useState('')
+    60→  const [password, setPassword] = useState('')
+    61→  const [name, setName] = useState('')
+    62→
+    63→  const resetForm = useCallback(() => {
+    64→    setEmail('')
+    65→    setPassword('')
+    66→    setName('')
+    67→    setIsLoading(false)
+    68→  }, [])
+    69→
+    70→  const handleClose = useCallback(() => {
+    71→    onClose()
+    72→    setTimeout(resetForm, 300)
+    73→  }, [onClose, resetForm])
+    74→
+    75→  const handleSubmit = async (e: React.FormEvent) => {
+    76→    e.preventDefault()
+    77→    if (!email.trim() || !password.trim()) {
+    78→      toast.error('Please fill in email and password')
+    79→      return
+    80→    }
+    81→    if (mode === 'signup' && password.length < 6) {
+    82→      toast.error('Password must be at least 6 characters')
+    83→      return
+    84→    }
+    85→
+    86→    setIsLoading(true)
+    87→    try {
+    88→      const success = mode === 'login'
+    89→        ? await login(email.trim(), password)
+    90→        : await signup(email.trim(), password, name.trim())
+    91→
+    92→      if (success) {
+    93→        handleClose()
+    94→      } else {
+    95→        toast.error(mode === 'login' ? 'Invalid email or password' : 'Signup failed')
+    96→      }
+    97→    } catch {
+    98→      toast.error('Something went wrong')
+    99→    } finally {
+   100→      setIsLoading(false)
+   101→    }
+   102→  }
+   103→
+   104→  return (
+   105→    <AnimatePresence>
+   106→      {open && (
+   107→        <>
+   108→          <motion.div
+   109→            initial={{ opacity: 0 }}
+   110→            animate={{ opacity: 1 }}
+   111→            exit={{ opacity: 0 }}
+   112→            transition={{ duration: 0.2 }}
+   113→            className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-50"
+   114→            onClick={handleClose}
+   115→          />
+   116→          <motion.div
+   117→            initial={{ y: '100%' }}
+   118→            animate={{ y: 0 }}
+   119→            exit={{ y: '100%' }}
+   120→            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+   121→            className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-6 shadow-2xl z-50 max-h-[85vh] overflow-y-auto pb-[env(safe-area-inset-bottom,16px)]"
+   122→            onClick={(e) => e.stopPropagation()}
+   123→          >
+   124→            <div className="w-10 h-1 rounded-full bg-zinc-200 mx-auto mb-4" />
+   125→            <div className="flex justify-end mb-2">
+   126→              <button
+   127→                onClick={handleClose}
+   128→                className="size-8 rounded-full flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 text-zinc-500 transition-colors"
+   129→              >
+   130→                <X className="size-4" />
+   131→              </button>
+   132→            </div>
+   133→            <form onSubmit={handleSubmit} className="space-y-5">
+   134→              {mode === 'signup' && (
+   135→                <input
+   136→                  type="text"
+   137→                  placeholder="Name"
+   138→                  value={name}
+   139→                  onChange={(e) => setName(e.target.value)}
+   140→                  disabled={isLoading}
+   141→                  className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   142→                />
+   143→              )}
+   144→              <input
+   145→                type="email"
+   146→                placeholder="Email"
+   147→                value={email}
+   148→                onChange={(e) => setEmail(e.target.value)}
+   149→                disabled={isLoading}
+   150→                autoFocus
+   151→                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   152→              />
+   153→              <input
+   154→                type="password"
+   155→                placeholder="Password"
+   156→                value={password}
+   157→                onChange={(e) => setPassword(e.target.value)}
+   158→                disabled={isLoading}
+   159→                className="w-full border-b border-zinc-200 focus:border-purple-500 bg-transparent rounded-none px-0 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors disabled:opacity-50"
+   160→              />
+   161→              <button
+   162→                type="submit"
+   163→                disabled={isLoading}
+   164→                className={cn(
+   165→                  'w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl h-10 font-medium text-sm transition-colors',
+   166→                  'disabled:opacity-50 disabled:cursor-not-allowed'
+   167→                )}
+   168→              >
+   169→                {isLoading ? <Loader2 className="size-4 animate-spin" /> : mode === 'login' ? 'Sign In' : 'Create Account'}
+   170→              </button>
+   171→            </form>
+   172→            <div className="mt-4 text-center">
+   173→              <button
+   174→                onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+   175→                className="text-xs text-zinc-400 hover:text-zinc-700 transition-colors"
+   176→                disabled={isLoading}
+   177→              >
+   178→                {mode === 'login' ? 'Sign up' : 'Sign in'}
+   179→              </button>
+   180→            </div>
+   181→          </motion.div>
+   182→        </>
+   183→      )}
+   184→    </AnimatePresence>
+   185→  )
+   186→}
+   187→
+   188→// ─── Dashboard Component ────────────────────────────────────────────
+   189→
+   190→export function Dashboard() {
+   191→  const {
+   192→    memories,
+   193→    addMemory,
+   194→    deleteMemoryFromDB,
+   195→    isLoading,
+   196→    isAuthenticated,
+   197→    requireAuth,
+   198→    fetchMemories,
+   199→  } = useAetherStore()
+   200→
+   201→  // ── Local State ──────────────────────────────────────────────────
+   202→  const [captureText, setCaptureText] = useState('')
+   203→  const [isSaving, setIsSaving] = useState(false)
+   204→  const [showCaptureAnimation, setShowCaptureAnimation] = useState(false)
+   205→
+   206→  // Voice recording state
+   207→  const [isRecording, setIsRecording] = useState(false)
+   208→  const [isTranscribing, setIsTranscribing] = useState(false)
+   209→  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+   210→  const audioChunksRef = useRef<Blob[]>([])
+   211→
+   212→  // Image upload state
+   213→  const [imagePreview, setImagePreview] = useState<{ file: File; url: string; name: string } | null>(null)
+   214→  const fileInputRef = useRef<HTMLInputElement>(null)
+   215→
+   216→  // Memory drawer state
+   217→  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
+   218→  const [drawerOpen, setDrawerOpen] = useState(false)
+   219→
+   220→  // Paywall state
+   221→  const [showPaywall, setShowPaywall] = useState(false)
+   222→
+   223→  // Mobile auth drawer state
+   224→  const [isAuthDrawerOpen, setIsAuthDrawerOpen] = useState(false)
+   225→
+   226→  // Pending capture for auth gate — stores text/image to replay after login
+   227→  const pendingCaptureTextRef = useRef<string>('')
+   228→  const pendingImageRef = useRef<{ file: File; url: string; name: string } | null>(null)
+   229→
+   230→  // Input ref
+   231→  const inputRef = useRef<HTMLInputElement>(null)
+   232→
+   233→  // ── Fetch memories on mount ──────────────────────────────────────
+   234→  useEffect(() => {
+   235→    fetchMemories()
+   236→  }, [fetchMemories])
+   237→
+   238→  // ── Sorted memories ──────────────────────────────────────────────
+   239→  const sortedMemories = useMemo(() => {
+   240→    return [...memories].sort(
+   241→      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+   242→    )
+   243→  }, [memories])
+   244→
+   245→  // ─── THE UNIVERSAL PACKAGING FUNCTION ─────────────────────────────
+   246→  // This is the master async function that packages ALL media types
+   247→  // (text, voice transcript, image, URL) into a single FormData payload
+   248→  // and sends it to the bulletproof /api/capture endpoint.
+   249→  const handleCaptureSubmit = useCallback(async () => {
+   250→    const text = captureText.trim()
+   251→    const image = imagePreview
+   252→
+   253→    if (!text && !image) return
+   254→
+   255→    // Paywall check: limit unauthenticated users to 10 memories
+   256→    if (memories.length >= 10 && !isAuthenticated) {
+   257→      setShowPaywall(true)
+   258→      return
+   259→    }
+   260→
+   261→    // Execute capture immediately — unauthenticated users can save locally
+   262→    // via the Prisma fallback. The auth drawer is only shown when they
+   263→    // want cloud sync or hit the paywall limit.
+   264→    await executeCapture(text, image?.file ?? null)
+   265→  }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth])
+   266→
+   267→  // ─── THE CORE CAPTURE EXECUTION ENGINE ─────────────────────────────
+   268→  // Sends the packaged FormData to /api/capture and handles the response.
+   269→  // On success, pushes the new memory to the top of the feed instantly.
+   270→  const executeCapture = useCallback(async (text: string, imageFile: File | null) => {
+   271→    if (!text.trim() && !imageFile) return
+   272→
+   273→    setIsSaving(true)
+   274→    setShowCaptureAnimation(true)
+   275→
+   276→    try {
+   277→      // ── Package the universal FormData ──────────────────────────
+   278→      const formData = new FormData()
+   279→
+   280→      if (text.trim()) {
+   281→        formData.append('text', text.trim())
+   282→      }
+   283→
+   284→      if (imageFile) {
+   285→        formData.append('image', imageFile)
+   286→        formData.append('type', 'image')
+   287→      } else {
+   288→        // Detect content type for text-only submissions
+   289→        const detected = detectContentType(text || 'note')
+   290→        formData.append('type', mapToMemoryType(detected))
+   291→
+   292→        // If it looks like a URL, also pass it as the url field
+   293→        if (detected === 'link') {
+   294→          formData.append('url', text.trim())
+   295→        }
+   296→      }
+   297→
+   298→      // ── Send to the bulletproof capture endpoint ────────────────
+   299→      const response = await fetch('/api/capture', {
+   300→        method: 'POST',
+   301→        body: formData,
+   302→      })
+   303→
+   304→      if (!response.ok) {
+   305→        const errorData = await response.json().catch(() => ({}))
+   306→        throw new Error((errorData as { error?: string }).error || `Server error: ${response.status}`)
+   307→      }
+   308→
+   309→      const data = await response.json()
+   310→
+   311→      // ── OPTIMISTIC UI STATE MUTATION ────────────────────────────
+   312→      // The exact millisecond the backend confirms a successful save,
+   313→      // push the new memory straight to the top of the timeline array.
+   314→      if (data.success && data.memory) {
+   315→        const newMemory = data.memory as Memory
+   316→        addMemory(newMemory)
+   317→      }
+   318→
+   319→      // ── CLEAR COGNITIVE LAYOUT ──────────────────────────────────
+   320→      // Immediately clear the input field so the workspace remains
+   321→      // completely empty, silent, and calm.
+   322→      setCaptureText('')
+   323→      setImagePreview(null)
+   324→      if (fileInputRef.current) fileInputRef.current.value = ''
+   325→
+   326→      // Refocus the input for rapid capture
+   327→      setTimeout(() => {
+   328→        inputRef.current?.focus()
+   329→      }, 50)
+   330→    } catch (error) {
+   331→      console.error('[Dashboard] Capture failed:', error)
+   332→      toast.error('Failed to save — please try again')
+   333→    } finally {
+   334→      setIsSaving(false)
+   335→      setTimeout(() => setShowCaptureAnimation(false), 300)
+   336→    }
+   337→  }, [addMemory])
+   338→
+   339→  // ── Mic button ─────────────────────────────────────────────────
+   340→  const handleMicClick = useCallback(() => {
+   341→    // Start/stop recording — available to all users
+   342→    if (isRecording) {
+   343→      stopRecording()
+   344→    } else {
+   345→      startRecording()
+   346→    }
+   347→  }, [isRecording])
+   348→
+   349→  // ── Voice recording ──────────────────────────────────────────────
+   350→  const startRecording = useCallback(async () => {
+   351→    try {
+   352→      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+   353→      const mediaRecorder = new MediaRecorder(stream, {
+   354→        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+   355→          ? 'audio/webm;codecs=opus'
+   356→          : 'audio/webm',
+   357→      })
+   358→      audioChunksRef.current = []
+   359→
+   360→      mediaRecorder.ondataavailable = (event) => {
+   361→        if (event.data.size > 0) {
+   362→          audioChunksRef.current.push(event.data)
+   363→        }
+   364→      }
+   365→
+   366→      mediaRecorder.onstop = async () => {
+   367→        stream.getTracks().forEach((track) => track.stop())
+   368→        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+   369→        setIsTranscribing(true)
+   370→
+   371→        try {
+   372→          // ── Send audio directly to /api/capture ──────────────────
+   373→          // Instead of just transcribing and putting text in the input,
+   374→          // we send the audio blob directly to the capture pipeline
+   375→          // so it gets transcribed + summarized + saved in one shot.
+   376→          const formData = new FormData()
+   377→          formData.append('audio', audioBlob, 'recording.webm')
+   378→          formData.append('type', 'voice')
+   379→
+   380→          // If there's already text in the capture field, include it
+   381→          const currentText = captureText.trim()
+   382→          if (currentText) {
+   383→            formData.append('text', currentText)
+   384→          }
+   385→
+   386→          const response = await fetch('/api/capture', {
+   387→            method: 'POST',
+   388→            body: formData,
+   389→          })
+   390→
+   391→          if (response.ok) {
+   392→            const data = await response.json()
+   393→            if (data.success && data.memory) {
+   394→              addMemory(data.memory as Memory)
+   395→            }
+   396→            // Clear the input after voice capture
+   397→            setCaptureText('')
+   398→            setImagePreview(null)
+   399→            if (fileInputRef.current) fileInputRef.current.value = ''
+   400→          } else {
+   401→            // Fallback: try just transcribing and putting text in input
+   402→            const transcribeRes = await fetch('/api/transcribe', {
+   403→              method: 'POST',
+   404→              body: (() => {
+   405→                const fd = new FormData()
+   406→                fd.append('audio', audioBlob, 'recording.webm')
+   407→                return fd
+   408→              })(),
+   409→            })
+   410→            if (transcribeRes.ok) {
+   411→              const transData = await transcribeRes.json()
+   412→              if (transData.text?.trim()) {
+   413→                setCaptureText(transData.text.trim())
+   414→                toast.success('Transcribed! Press send to save.')
+   415→              }
+   416→            } else {
+   417→              toast.error('Voice capture failed')
+   418→            }
+   419→          }
+   420→        } catch {
+   421→          toast.error('Voice capture failed')
+   422→        } finally {
+   423→          setIsTranscribing(false)
+   424→        }
+   425→      }
+   426→
+   427→      mediaRecorderRef.current = mediaRecorder
+   428→      mediaRecorder.start()
+   429→      setIsRecording(true)
+   430→    } catch {
+   431→      toast.error('Microphone access denied')
+   432→    }
+   433→  }, [captureText, addMemory])
+   434→
+   435→  const stopRecording = useCallback(() => {
+   436→    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+   437→      mediaRecorderRef.current.stop()
+   438→      setIsRecording(false)
+   439→    }
+   440→  }, [])
+   441→
+   442→  // ── Image upload ─────────────────────────────────────────────────
+   443→  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   444→    const file = e.target.files?.[0]
+   445→    if (!file) return
+   446→    if (!file.type.startsWith('image/')) {
+   447→      toast.error('Only image files')
+   448→      return
+   449→    }
+   450→    if (file.size > 10 * 1024 * 1024) {
+   451→      toast.error('Under 10MB')
+   452→      return
+   453→    }
+   454→    const url = URL.createObjectURL(file)
+   455→    setImagePreview({ file, url, name: file.name })
+   456→  }, [])
+   457→
+   458→  const removeImage = useCallback(() => {
+   459→    if (imagePreview) URL.revokeObjectURL(imagePreview.url)
+   460→    setImagePreview(null)
+   461→    if (fileInputRef.current) fileInputRef.current.value = ''
+   462→  }, [imagePreview])
+   463→
+   464→  // ── Memory drawer ────────────────────────────────────────────────
+   465→  const openDrawer = useCallback((memory: Memory) => {
+   466→    setSelectedMemory(memory)
+   467→    setDrawerOpen(true)
+   468→  }, [])
+   469→
+   470→  const closeDrawer = useCallback(() => {
+   471→    setDrawerOpen(false)
+   472→    setTimeout(() => setSelectedMemory(null), 300)
+   473→  }, [])
+   474→
+   475→  // ── Delete memory ────────────────────────────────────────────────
+   476→  const handleDelete = useCallback(async (id: string) => {
+   477→    try {
+   478→      await deleteMemoryFromDB(id)
+   479→      closeDrawer()
+   480→    } catch {
+   481→      toast.error('Failed to delete')
+   482→    }
+   483→  }, [deleteMemoryFromDB, closeDrawer])
+   484→
+   485→  // ── Keyboard handler ─────────────────────────────────────────────
+   486→  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+   487→    if (e.key === 'Enter' && !e.shiftKey) {
+   488→      e.preventDefault()
+   489→      handleCaptureSubmit()
+   490→    }
+   491→  }, [handleCaptureSubmit])
+   492→
+   493→  // ── Render ───────────────────────────────────────────────────────
+   494→  return (
+   495→    <div className="flex flex-col h-full">
+   496→      {/* ── Memory Feed ──────────────────────────────────────────── */}
+   497→      <div className="flex-1 overflow-y-auto px-4 md:px-0">
+   498→        <div className="max-w-2xl mx-auto">
+   499→          {isLoading && memories.length === 0 ? (
+   500→            <div className="flex items-center justify-center py-24">
+   501→              <Loader2 className="size-6 animate-spin text-gray-300" />
+   502→            </div>
+   503→          ) : sortedMemories.length === 0 ? (
+   504→            <div className="flex flex-col items-center justify-center py-24">
+   505→              <Brain className="size-10 text-gray-200" />
+   506→            </div>
+   507→          ) : (
+   508→            <div className="divide-y divide-black/[0.03]">
+   509→              <AnimatePresence mode="popLayout">
+   510→                {sortedMemories.map((memory, index) => {
+   511→                  const detected = detectContentType(memory.content || memory.title)
+   512→                  const IconComponent = typeIconMap[detected] || FileText
+   513→                  const staggerDelay = Math.min(index * 0.03, 0.15)
+   514→
+   515→                  return (
+   516→                    <motion.button
+   517→                      key={memory.id}
+   518→                      initial={{ opacity: 0, y: 6 }}
+   519→                      animate={{ opacity: 1, y: 0 }}
+   520→                      exit={{ opacity: 0, y: -6 }}
+   521→                      transition={{ duration: 0.2, delay: staggerDelay, ease: 'easeOut' }}
+   522→                      onClick={() => openDrawer(memory)}
+   523→                      className="w-full flex items-center gap-3 py-3.5 px-1 text-left group hover:bg-black/[0.015] rounded-lg transition-colors"
+   524→                    >
+   525→                      <div className="shrink-0 size-8 flex items-center justify-center">
+   526→                        <IconComponent className="size-4 text-gray-300 group-hover:text-gray-400 transition-colors" />
+   527→                      </div>
+   528→                      <div className="flex-1 min-w-0">
+   529→                        <p className="text-sm text-gray-800 line-clamp-2 leading-snug">
+   530→                          {memory.title || memory.content}
+   531→                        </p>
+   532→                      </div>
+   533→                      <span className="shrink-0 text-[11px] text-gray-300 tabular-nums">
+   534→                        {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
+   535→                      </span>
+   536→                      <ChevronRight className="size-4 text-gray-200 group-hover:text-gray-300 shrink-0 transition-colors" />
+   537→                    </motion.button>
+   538→                  )
+   539→                })}
+   540→              </AnimatePresence>
+   541→            </div>
+   542→          )}
+   543→        </div>
+   544→      </div>
+   545→
+   546→      {/* ── Capture Bar ─────────────────────────────────────────── */}
+   547→      <div className="shrink-0 px-4 pb-4 pt-2 md:px-0">
+   548→        <div className="max-w-2xl mx-auto">
+   549→          {/* Image preview pill */}
+   550→          <AnimatePresence>
+   551→            {imagePreview && (
+   552→              <motion.div
+   553→                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+   554→                animate={{ opacity: 1, y: 0, scale: 1 }}
+   555→                exit={{ opacity: 0, y: 8, scale: 0.95 }}
+   556→                transition={{ duration: 0.2 }}
+   557→                className="mb-2 inline-flex items-center gap-2 bg-white/90 border border-black/[0.06] rounded-xl pl-1.5 pr-2.5 py-1.5 shadow-sm"
+   558→              >
+   559→                <img src={imagePreview.url} alt={imagePreview.name} className="size-8 rounded-lg object-cover" />
+   560→                <span className="text-xs text-gray-500 max-w-[120px] truncate">{imagePreview.name}</span>
+   561→                <button onClick={removeImage} className="size-4 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors">
+   562→                  <X className="size-3 text-gray-400" />
+   563→                </button>
+   564→              </motion.div>
+   565→            )}
+   566→          </AnimatePresence>
+   567→
+   568→          {/* Glass capsule input */}
+   569→          <div
+   570→            className={cn(
+   571→              'bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2',
+   572→              'focus-within:border-purple-300/60 focus-within:shadow-[0_0_40px_rgba(168,85,247,0.04)]',
+   573→              'transition-all duration-200'
+   574→            )}
+   575→          >
+   576→            <div className="flex items-center gap-1.5">
+   577→              {/* Mic button */}
+   578→              <button
+   579→                onClick={handleMicClick}
+   580→                disabled={isTranscribing || isSaving}
+   581→                className={cn(
+   582→                  'size-9 rounded-xl flex items-center justify-center transition-all shrink-0',
+   583→                  isRecording
+   584→                    ? 'bg-red-50 text-red-500 hover:bg-red-100'
+   585→                    : isTranscribing
+   586→                      ? 'bg-gray-50 text-gray-400'
+   587→                      : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+   588→                )}
+   589→              >
+   590→                {isTranscribing ? (
+   591→                  <Loader2 className="size-4 animate-spin" />
+   592→                ) : isRecording ? (
+   593→                  <MicOff className="size-4" />
+   594→                ) : (
+   595→                  <Mic className="size-4" />
+   596→                )}
+   597→              </button>
+   598→
+   599→              {/* Text input */}
+   600→              <input
+   601→                ref={inputRef}
+   602→                type="text"
+   603→                value={captureText}
+   604→                onChange={(e) => setCaptureText(e.target.value)}
+   605→                onKeyDown={handleKeyDown}
+   606→                placeholder=""
+   607→                disabled={isSaving}
+   608→                className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none min-w-0 py-1.5 px-1"
+   609→              />
+   610→
+   611→              {/* Image upload button */}
+   612→              <button
+   613→                onClick={() => fileInputRef.current?.click()}
+   614→                disabled={isSaving}
+   615→                className="size-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-all shrink-0"
+   616→              >
+   617→                <ImageIcon className="size-4" />
+   618→              </button>
+   619→              <input
+   620→                ref={fileInputRef}
+   621→                type="file"
+   622→                accept="image/*"
+   623→                onChange={handleImageSelect}
+   624→                className="hidden"
+   625→              />
+   626→
+   627→              {/* Send button */}
+   628→              <button
+   629→                onClick={handleCaptureSubmit}
+   630→                disabled={(!captureText.trim() && !imagePreview) || isSaving}
+   631→                className={cn(
+   632→                  'size-9 rounded-xl flex items-center justify-center transition-all shrink-0',
+   633→                  captureText.trim() || imagePreview
+   634→                    ? 'bg-gray-900 text-white hover:bg-gray-800'
+   635→                    : 'bg-gray-100 text-gray-400'
+   636→                )}
+   637→              >
+   638→                {isSaving ? (
+   639→                  <Loader2 className="size-4 animate-spin" />
+   640→                ) : (
+   641→                  <Send className="size-4" />
+   642→                )}
+   643→              </button>
+   644→            </div>
+   645→          </div>
+   646→        </div>
+   647→      </div>
+   648→
+   649→      {/* ── Memory Drawer (slide-out from right) ──────────────────── */}
+   650→      <AnimatePresence>
+   651→        {drawerOpen && (
+   652→          <>
+   653→            <motion.div
+   654→              initial={{ opacity: 0 }}
+   655→              animate={{ opacity: 1 }}
+   656→              exit={{ opacity: 0 }}
+   657→              transition={{ duration: 0.2 }}
+   658→              className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-40"
+   659→              onClick={closeDrawer}
+   660→            />
+   661→            <motion.div
+   662→              initial={{ x: '100%' }}
+   663→              animate={{ x: 0 }}
+   664→              exit={{ x: '100%' }}
+   665→              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+   666→              className="fixed top-0 right-0 h-full w-full max-w-md bg-white/95 backdrop-blur-2xl border-l border-black/[0.04] z-50 flex flex-col overflow-hidden"
+   667→            >
+   668→              {selectedMemory && (
+   669→                <>
+   670→                  <div className="shrink-0 flex items-center justify-between px-6 h-14 border-b border-black/[0.04]">
+   671→                    <div className="flex items-center gap-2 text-xs text-gray-400">
+   672→                      <Clock className="size-3.5" />
+   673→                      {formatDistanceToNow(new Date(selectedMemory.createdAt), { addSuffix: true })}
+   674→                    </div>
+   675→                    <button
+   676→                      onClick={closeDrawer}
+   677→                      className="size-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+   678→                    >
+   679→                      <X className="size-4" />
+   680→                    </button>
+   681→                  </div>
+   682→
+   683→                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+   684→                    <h2 className="text-lg font-semibold text-gray-900 leading-snug">
+   685→                      {selectedMemory.title || selectedMemory.content}
+   686→                    </h2>
+   687→
+   688→                    {selectedMemory.summary && (
+   689→                      <div className="space-y-2">
+   690→                        <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
+   691→                          <Sparkles className="size-3" />
+   692→                          AI Recap
+   693→                        </div>
+   694→                        <p className="text-sm text-gray-600 leading-relaxed">
+   695→                          {selectedMemory.summary}
+   696→                        </p>
+   697→                      </div>
+   698→                    )}
+   699→
+   700→                    {selectedMemory.imageUrl && (
+   701→                      <div className="rounded-xl overflow-hidden border border-black/[0.04]">
+   702→                        <img src={selectedMemory.imageUrl} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
+   703→                      </div>
+   704→                    )}
+   705→
+   706→                    {(selectedMemory.imagePreview || selectedMemory.fileUrl) && !selectedMemory.imageUrl && (
+   707→                      <div className="rounded-xl overflow-hidden border border-black/[0.04]">
+   708→                        <img src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
+   709→                      </div>
+   710→                    )}
+   711→
+   712→                    {selectedMemory.tags.length > 0 && (
+   713→                      <div className="flex flex-wrap gap-1.5">
+   714→                        {selectedMemory.tags.map((tag) => (
+   715→                          <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">{tag}</span>
+   716→                        ))}
+   717→                      </div>
+   718→                    )}
+   719→
+   720→                    {selectedMemory.collections.length > 0 && (
+   721→                      <div className="flex flex-wrap gap-1.5">
+   722→                        {selectedMemory.collections.map((col) => (
+   723→                          <span key={col.id} className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1">
+   724→                            {col.icon && <span>{col.icon}</span>}
+   725→                            {col.name}
+   726→                          </span>
+   727→                        ))}
+   728→                      </div>
+   729→                    )}
+   730→
+   731→                    {selectedMemory.content && selectedMemory.content !== selectedMemory.title && (
+   732→                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+   733→                        {selectedMemory.content}
+   734→                      </div>
+   735→                    )}
+   736→
+   737→                    {selectedMemory.sourceUrl && (
+   738→                      <a href={selectedMemory.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all">
+   739→                        <Link2 className="size-3 shrink-0" />
+   740→                        {selectedMemory.sourceUrl}
+   741→                      </a>
+   742→                    )}
+   743→
+   744→                    <div className="text-[11px] text-gray-300">
+   745→                      {new Date(selectedMemory.createdAt).toLocaleString()}
+   746→                    </div>
+   747→                  </div>
+   748→
+   749→                  <div className="shrink-0 px-6 py-4 border-t border-black/[0.04]">
+   750→                    <button
+   751→                      onClick={() => handleDelete(selectedMemory.id)}
+   752→                      className="flex items-center gap-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+   753→                    >
+   754→                      <Trash2 className="size-3.5" />
+   755→                      Delete
+   756→                    </button>
+   757→                  </div>
+   758→                </>
+   759→              )}
+   760→            </motion.div>
+   761→          </>
+   762→        )}
+   763→      </AnimatePresence>
+   764→
+   765→      {/* ── Mobile Auth Drawer ────────────────────────────────────── */}
+   766→      <MobileAuthDrawer
+   767→        open={isAuthDrawerOpen}
+   768→        onClose={() => setIsAuthDrawerOpen(false)}
+   769→      />
+   770→
+   771→      {/* ── Paywall Modal ────────────────────────────────────────── */}
+   772→      <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} isDark={false} />
+   773→    </div>
+   774→  )
+   775→}
+   776→

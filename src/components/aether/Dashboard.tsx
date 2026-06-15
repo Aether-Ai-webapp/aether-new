@@ -19,6 +19,9 @@ import {
   Loader2,
   ChevronRight,
   Sparkles,
+  Download,
+  Eye,
+  Volume2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -42,9 +45,59 @@ const typeIconMap: Record<string, React.ElementType> = {
   link: Link2,
   task: CheckCircle2,
   note: FileText,
+  voice: Volume2,
+  image: ImageIcon,
 }
 
-// ─── Mobile Auth Drawer (built into Dashboard) ─────────────────────
+// ─── Download helper: export memory as clean markdown ───────────────
+function downloadMemoryAsMarkdown(memory: Memory) {
+  const lines: string[] = []
+  lines.push(`# ${memory.title || 'Untitled Memory'}`)
+  lines.push('')
+  lines.push(`**Type:** ${memory.type}`)
+  lines.push(`**Created:** ${new Date(memory.createdAt).toLocaleString()}`)
+  if (memory.tags.length > 0) {
+    lines.push(`**Tags:** ${memory.tags.join(', ')}`)
+  }
+  if (memory.sourceUrl) {
+    lines.push(`**Source:** ${memory.sourceUrl}`)
+  }
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+
+  if (memory.summary) {
+    lines.push('## Summary')
+    lines.push('')
+    lines.push(memory.summary)
+    lines.push('')
+  }
+
+  if (memory.deepInsight || memory.recap) {
+    lines.push('## Cognitive Insight')
+    lines.push('')
+    lines.push(memory.deepInsight || memory.recap || '')
+    lines.push('')
+  }
+
+  lines.push('## Original Content')
+  lines.push('')
+  lines.push(memory.content)
+  lines.push('')
+
+  const markdown = lines.join('\n')
+  const blob = new Blob([markdown], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${(memory.title || 'memory').slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ─── Mobile Auth Drawer ────────────────────────────────────────────
 
 function MobileAuthDrawer({
   open,
@@ -185,7 +238,9 @@ function MobileAuthDrawer({
   )
 }
 
-// ─── Dashboard Component ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── DASHBOARD COMPONENT ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
 
 export function Dashboard() {
   const {
@@ -223,10 +278,6 @@ export function Dashboard() {
   // Mobile auth drawer state
   const [isAuthDrawerOpen, setIsAuthDrawerOpen] = useState(false)
 
-  // Pending capture for auth gate — stores text/image to replay after login
-  const pendingCaptureTextRef = useRef<string>('')
-  const pendingImageRef = useRef<{ file: File; url: string; name: string } | null>(null)
-
   // Input ref
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -243,9 +294,6 @@ export function Dashboard() {
   }, [memories])
 
   // ─── THE UNIVERSAL PACKAGING FUNCTION ─────────────────────────────
-  // This is the master async function that packages ALL media types
-  // (text, voice transcript, image, URL) into a single FormData payload
-  // and sends it to the bulletproof /api/capture endpoint.
   const handleCaptureSubmit = useCallback(async () => {
     const text = captureText.trim()
     const image = imagePreview
@@ -258,15 +306,10 @@ export function Dashboard() {
       return
     }
 
-    // Execute capture immediately — unauthenticated users can save locally
-    // via the Prisma fallback. The auth drawer is only shown when they
-    // want cloud sync or hit the paywall limit.
     await executeCapture(text, image?.file ?? null)
   }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth])
 
   // ─── THE CORE CAPTURE EXECUTION ENGINE ─────────────────────────────
-  // Sends the packaged FormData to /api/capture and handles the response.
-  // On success, pushes the new memory to the top of the feed instantly.
   const executeCapture = useCallback(async (text: string, imageFile: File | null) => {
     if (!text.trim() && !imageFile) return
 
@@ -285,11 +328,9 @@ export function Dashboard() {
         formData.append('image', imageFile)
         formData.append('type', 'image')
       } else {
-        // Detect content type for text-only submissions
         const detected = detectContentType(text || 'note')
         formData.append('type', mapToMemoryType(detected))
 
-        // If it looks like a URL, also pass it as the url field
         if (detected === 'link') {
           formData.append('url', text.trim())
         }
@@ -317,8 +358,6 @@ export function Dashboard() {
       }
 
       // ── CLEAR COGNITIVE LAYOUT ──────────────────────────────────
-      // Immediately clear the input field so the workspace remains
-      // completely empty, silent, and calm.
       setCaptureText('')
       setImagePreview(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -338,7 +377,6 @@ export function Dashboard() {
 
   // ── Mic button ─────────────────────────────────────────────────
   const handleMicClick = useCallback(() => {
-    // Start/stop recording — available to all users
     if (isRecording) {
       stopRecording()
     } else {
@@ -369,15 +407,11 @@ export function Dashboard() {
         setIsTranscribing(true)
 
         try {
-          // ── Send audio directly to /api/capture ──────────────────
-          // Instead of just transcribing and putting text in the input,
-          // we send the audio blob directly to the capture pipeline
-          // so it gets transcribed + summarized + saved in one shot.
+          // Send audio directly to /api/capture for full pipeline processing
           const formData = new FormData()
           formData.append('audio', audioBlob, 'recording.webm')
           formData.append('type', 'voice')
 
-          // If there's already text in the capture field, include it
           const currentText = captureText.trim()
           if (currentText) {
             formData.append('text', currentText)
@@ -393,12 +427,11 @@ export function Dashboard() {
             if (data.success && data.memory) {
               addMemory(data.memory as Memory)
             }
-            // Clear the input after voice capture
             setCaptureText('')
             setImagePreview(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
           } else {
-            // Fallback: try just transcribing and putting text in input
+            // Fallback: transcribe and put text in input
             const transcribeRes = await fetch('/api/transcribe', {
               method: 'POST',
               body: (() => {
@@ -472,15 +505,22 @@ export function Dashboard() {
     setTimeout(() => setSelectedMemory(null), 300)
   }, [])
 
-  // ── Delete memory ────────────────────────────────────────────────
-  const handleDelete = useCallback(async (id: string) => {
+  // ── Delete memory (Purge) ────────────────────────────────────────
+  const handlePurge = useCallback(async (id: string) => {
     try {
       await deleteMemoryFromDB(id)
       closeDrawer()
+      toast.success('Memory purged')
     } catch {
-      toast.error('Failed to delete')
+      toast.error('Failed to purge')
     }
   }, [deleteMemoryFromDB, closeDrawer])
+
+  // ── Download memory as markdown ──────────────────────────────────
+  const handleDownload = useCallback((memory: Memory) => {
+    downloadMemoryAsMarkdown(memory)
+    toast.success('Downloaded as markdown')
+  }, [])
 
   // ── Keyboard handler ─────────────────────────────────────────────
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -509,7 +549,7 @@ export function Dashboard() {
               <AnimatePresence mode="popLayout">
                 {sortedMemories.map((memory, index) => {
                   const detected = detectContentType(memory.content || memory.title)
-                  const IconComponent = typeIconMap[detected] || FileText
+                  const IconComponent = typeIconMap[memory.type] || typeIconMap[detected] || FileText
                   const staggerDelay = Math.min(index * 0.03, 0.15)
 
                   return (
@@ -529,6 +569,11 @@ export function Dashboard() {
                         <p className="text-sm text-gray-800 line-clamp-2 leading-snug">
                           {memory.title || memory.content}
                         </p>
+                        {memory.summary && (
+                          <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">
+                            {memory.summary}
+                          </p>
+                        )}
                       </div>
                       <span className="shrink-0 text-[11px] text-gray-300 tabular-nums">
                         {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
@@ -646,7 +691,9 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* ── Memory Drawer (slide-out from right) ──────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* ── FULL INSPECTION DRAWER (slide-out from right) ──────────── */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {drawerOpen && (
           <>
@@ -667,6 +714,7 @@ export function Dashboard() {
             >
               {selectedMemory && (
                 <>
+                  {/* ── Drawer Header ────────────────────────────────── */}
                   <div className="shrink-0 flex items-center justify-between px-6 h-14 border-b border-black/[0.04]">
                     <div className="flex items-center gap-2 text-xs text-gray-400">
                       <Clock className="size-3.5" />
@@ -680,16 +728,20 @@ export function Dashboard() {
                     </button>
                   </div>
 
+                  {/* ── Drawer Content (scrollable) ──────────────────── */}
                   <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+                    {/* Title */}
                     <h2 className="text-lg font-semibold text-gray-900 leading-snug">
                       {selectedMemory.title || selectedMemory.content}
                     </h2>
 
+                    {/* ── 1. AI Summary ─────────────────────────────── */}
                     {selectedMemory.summary && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
                           <Sparkles className="size-3" />
-                          AI Recap
+                          AI Summary
                         </div>
                         <p className="text-sm text-gray-600 leading-relaxed">
                           {selectedMemory.summary}
@@ -697,6 +749,7 @@ export function Dashboard() {
                       </div>
                     )}
 
+                    {/* ── 2. Image / Raw Content ────────────────────── */}
                     {selectedMemory.imageUrl && (
                       <div className="rounded-xl overflow-hidden border border-black/[0.04]">
                         <img src={selectedMemory.imageUrl} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
@@ -709,6 +762,41 @@ export function Dashboard() {
                       </div>
                     )}
 
+                    {/* Raw original content (if different from title) */}
+                    {selectedMemory.content && selectedMemory.content !== selectedMemory.title && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+                          <FileText className="size-3" />
+                          Original Content
+                        </div>
+                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-3">
+                          {selectedMemory.content}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Source URL */}
+                    {selectedMemory.sourceUrl && (
+                      <a href={selectedMemory.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all">
+                        <Link2 className="size-3 shrink-0" />
+                        {selectedMemory.sourceUrl}
+                      </a>
+                    )}
+
+                    {/* ── 3. Deep Cognitive Insight ──────────────────── */}
+                    {(selectedMemory.deepInsight || selectedMemory.recap) && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
+                          <Eye className="size-3" />
+                          Cognitive Insight
+                        </div>
+                        <div className="text-sm text-gray-700 leading-relaxed bg-amber-50/50 border border-amber-100/50 rounded-xl p-3">
+                          {selectedMemory.deepInsight || selectedMemory.recap}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Tags ─────────────────────────────────────── */}
                     {selectedMemory.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.tags.map((tag) => (
@@ -717,6 +805,7 @@ export function Dashboard() {
                       </div>
                     )}
 
+                    {/* ── Collections ──────────────────────────────── */}
                     {selectedMemory.collections.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.collections.map((col) => (
@@ -728,31 +817,32 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {selectedMemory.content && selectedMemory.content !== selectedMemory.title && (
-                      <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                        {selectedMemory.content}
-                      </div>
-                    )}
-
-                    {selectedMemory.sourceUrl && (
-                      <a href={selectedMemory.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all">
-                        <Link2 className="size-3 shrink-0" />
-                        {selectedMemory.sourceUrl}
-                      </a>
-                    )}
-
+                    {/* Timestamp detail */}
                     <div className="text-[11px] text-gray-300">
                       {new Date(selectedMemory.createdAt).toLocaleString()}
                     </div>
                   </div>
 
-                  <div className="shrink-0 px-6 py-4 border-t border-black/[0.04]">
+                  {/* ── Drawer Actions ────────────────────────────────── */}
+                  <div className="shrink-0 px-6 py-4 border-t border-black/[0.04] flex items-center gap-3">
+                    {/* 4. Download button */}
                     <button
-                      onClick={() => handleDelete(selectedMemory.id)}
+                      onClick={() => handleDownload(selectedMemory)}
+                      className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      <Download className="size-3.5" />
+                      Export
+                    </button>
+
+                    <div className="flex-1" />
+
+                    {/* 5. Purge button */}
+                    <button
+                      onClick={() => handlePurge(selectedMemory.id)}
                       className="flex items-center gap-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
                     >
                       <Trash2 className="size-3.5" />
-                      Delete
+                      Purge
                     </button>
                   </div>
                 </>
