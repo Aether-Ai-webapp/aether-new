@@ -12,6 +12,8 @@ export interface Memory {
   sourceUrl: string | null
   fileUrl: string | null
   imagePreview: string | null
+  imageUrl: string | null
+  recap: string | null
   isFavorite: boolean
   createdAt: string
   updatedAt: string
@@ -55,6 +57,8 @@ interface SupabaseMemoryRow {
   source_url: string | null
   file_url: string | null
   image_preview: string | null
+  image_url: string | null
+  recap: string | null
   is_favorite: boolean
   created_at: string
   updated_at: string
@@ -82,6 +86,8 @@ function mapSupabaseMemory(row: SupabaseMemoryRow): Memory {
     sourceUrl: row.source_url,
     fileUrl: row.file_url,
     imagePreview: row.image_preview,
+    imageUrl: row.image_url || null,
+    recap: row.recap || null,
     isFavorite: row.is_favorite || false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -225,7 +231,7 @@ interface AetherState {
   fetchCollections: () => Promise<void>
 
   // Supabase-aware save
-  saveMemory: (data: { type: MemoryType; title: string; content: string; sourceUrl?: string | null; tags?: string[]; collectionIds?: string[] }) => Promise<Memory | null>
+  saveMemory: (data: { type: MemoryType; title: string; content: string; sourceUrl?: string | null; imageUrl?: string | null; tags?: string[]; collectionIds?: string[] }) => Promise<Memory | null>
   saveCollection: (data: { name: string; color?: string; icon?: string }) => Promise<Collection | null>
 
   // Delete memory from DB
@@ -737,7 +743,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
   // ── Save Memory (Supabase-aware, optimistic UI, token-saving) ────────
   saveMemory: async (data) => {
     const state = get()
-    const { type, title, content, sourceUrl, tags, collectionIds } = data
+    const { type, title, content, sourceUrl, imageUrl, tags, collectionIds } = data
 
     // ── STEP 1: Smart Token Saver — local, free, instant tags ──────────
     const fullText = `${title || ''} ${content || ''}`.trim()
@@ -773,6 +779,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
             title: title || '',
             content: content || '',
             source_url: sourceUrl || null,
+            image_url: imageUrl || null,
             tags: finalTags ? (Array.isArray(finalTags) ? finalTags.join(',') : finalTags) : '',
           })
           .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
@@ -831,6 +838,7 @@ export const useAetherStore = create<AetherState>((set, get) => ({
           title,
           content,
           sourceUrl,
+          imageUrl,
           tags: finalTags,
           collectionIds,
         }),

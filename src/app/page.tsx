@@ -1,53 +1,79 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useAetherStore } from '@/lib/aether-store'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { AppShell } from '@/components/aether/AppShell'
 import { Dashboard } from '@/components/aether/Dashboard'
 import { AskAether } from '@/components/aether/AskAether'
 import { Collections } from '@/components/aether/Collections'
-import { Memories } from '@/components/aether/Memories'
 import { Settings } from '@/components/aether/Settings'
+import { LandingPage } from '@/components/aether/LandingPage'
+import { AuthDrawer } from '@/components/aether/AuthModal'
+
 function ViewRouter() {
   const currentView = useAetherStore((s) => s.currentView)
-
   const views: Record<string, React.ReactNode> = {
     dashboard: <Dashboard />,
     ask: <AskAether />,
     collections: <Collections />,
-    memories: <Memories />,
     settings: <Settings />,
   }
-
   return <>{views[currentView] || <Dashboard />}</>
 }
 
 function DataLoader({ children }: { children: React.ReactNode }) {
   const { fetchMemories, fetchCollections } = useAetherStore()
-
   useEffect(() => {
-    // Fire and forget — UI renders immediately, data loads in background
     fetchMemories()
     fetchCollections()
   }, [fetchMemories, fetchCollections])
-
   return <>{children}</>
 }
 
 export default function Home() {
-  const { checkSession } = useAetherStore()
+  const { checkSession, isAuthenticated } = useAetherStore()
+  const isMobile = useIsMobile()
+  const [hasEnteredApp, setHasEnteredApp] = useState(false)
 
   useEffect(() => {
-    // Check auth session on mount — UI is already visible
     checkSession()
   }, [checkSession])
 
-  // The app IS the landing page. Render immediately.
+  const handleEnterApp = useCallback(() => {
+    setHasEnteredApp(true)
+  }, [])
+
+  // Mobile: Always render the app immediately
+  if (isMobile) {
+    return (
+      <DataLoader>
+        <AppShell>
+          <ViewRouter />
+        </AppShell>
+        <AuthDrawer />
+      </DataLoader>
+    )
+  }
+
+  // Desktop: If authenticated or user entered, show app
+  const showApp = hasEnteredApp || isAuthenticated
+
+  if (!showApp) {
+    return (
+      <>
+        <LandingPage onEnterApp={handleEnterApp} />
+        <AuthDrawer />
+      </>
+    )
+  }
+
   return (
     <DataLoader>
       <AppShell>
         <ViewRouter />
       </AppShell>
+      <AuthDrawer />
     </DataLoader>
   )
 }
