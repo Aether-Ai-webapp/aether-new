@@ -1,0 +1,832 @@
+     1→     1→import { NextRequest, NextResponse } from 'next/server'
+     2→     2→
+     3→     3→// ═══════════════════════════════════════════════════════════════════════
+     4→     4→// ─── SUPABASE SERVER CLIENT ──────────────────────────────────────────
+     5→     5→// ═══════════════════════════════════════════════════════════════════════
+     6→     6→async function getSupabaseServer() {
+     7→     7→  const { createClient } = await import('@/lib/supabase/server')
+     8→     8→  return createClient()
+     9→     9→}
+    10→    10→
+    11→    11→// ═══════════════════════════════════════════════════════════════════════
+    12→    12→// ─── KEYWORD-BASED AUTO-TAGGING (free, instant, always runs) ─────────
+    13→    13→// ═══════════════════════════════════════════════════════════════════════
+    14→    14→function autoGenerateTags(content: string, title: string): string[] {
+    15→    15→  const text = `${title} ${content}`.toLowerCase()
+    16→    16→  const tagMap: Record<string, string[]> = {
+    17→    17→    work: ['meeting', 'project', 'deadline', 'client', 'office', 'team', 'q1', 'q2', 'q3', 'q4', 'quarterly', 'strategy', 'standup', 'sprint', 'agile'],
+    18→    18→    personal: ['routine', 'morning', 'exercise', 'meditation', 'journal', 'habit', 'family', 'gratitude', 'wellness'],
+    19→    19→    travel: ['trip', 'itinerary', 'flight', 'hotel', 'visit', 'tokyo', 'paris', 'destination', 'vacation', 'passport'],
+    20→    20→    learning: ['learn', 'study', 'course', 'tutorial', 'book', 'read', 'article', 'university', 'lecture', 'research'],
+    21→    21→    code: ['code', 'programming', 'react', 'javascript', 'typescript', 'api', 'bug', 'feature', 'css', 'html', 'framework', 'debug', 'deploy', 'git', 'docker', 'kubernetes'],
+    22→    22→    design: ['design', 'ui', 'ux', 'layout', 'color', 'font', 'figma', 'wireframe', 'gradient', 'typography', 'prototype'],
+    23→    23→    ai: ['ai', 'machine learning', 'neural', 'model', 'gpt', 'gemini', 'llm', 'chatbot', 'prompt', 'embedding', 'transformer'],
+    24→    24→    recipe: ['recipe', 'cook', 'bake', 'ingredient', 'food', 'meal', 'breakfast', 'dinner', 'groceries', 'lunch'],
+    25→    25→    idea: ['idea', 'concept', 'brainstorm', 'innovative', 'startup', 'prototype', 'vision', 'hypothesis'],
+    26→    26→    finance: ['budget', 'expense', 'invest', 'savings', 'money', 'cost', 'salary', 'revenue', 'profit'],
+    27→    27→    link: ['http', 'https', 'www', '.com', '.io', '.org', '.dev', '.app'],
+    28→    28→    task: ['todo', 'remind', 'need to', 'must', 'buy', 'deadline', 'urgent', 'action item'],
+    29→    29→    health: ['health', 'doctor', 'exercise', 'workout', 'gym', 'diet', 'sleep', 'mental', 'therapy'],
+    30→    30→    music: ['music', 'song', 'album', 'playlist', 'spotify', 'concert', 'band', 'genre'],
+    31→    31→  }
+    32→    32→
+    33→    33→  const tags: string[] = []
+    34→    34→  for (const [tag, keywords] of Object.entries(tagMap)) {
+    35→    35→    if (keywords.some((kw) => text.includes(kw))) {
+    36→    36→      tags.push(tag)
+    37→    37→    }
+    38→    38→  }
+    39→    39→  return tags.slice(0, 5)
+    40→    40→}
+    41→    41→
+    42→    42→// ═══════════════════════════════════════════════════════════════════════
+    43→    43→// ─── AUDIO TRANSCRIPTION — z-ai-web-dev-sdk ASR → Groq Whisper ──────
+    44→    44→// ═══════════════════════════════════════════════════════════════════════
+    45→    45→async function transcribeAudio(audioFile: File): Promise<string> {
+    46→    46→  // TIER 1: z-ai-web-dev-sdk ASR (always available, no API key needed)
+    47→    47→  try {
+    48→    48→    const { createTranscription } = await import('@/lib/aether-asr')
+    49→    49→    const transcript = await createTranscription(audioFile)
+    50→    50→    if (transcript?.trim()) {
+    51→    51→      console.log('[capture] Audio transcription: z-ai-web-dev-sdk ASR (Tier 1) succeeded')
+    52→    52→      return transcript.trim()
+    53→    53→    }
+    54→    54→  } catch (err) {
+    55→    55→    console.error('[capture] z-ai ASR failed:', err instanceof Error ? err.message : 'Unknown')
+    56→    56→  }
+    57→    57→
+    58→    58→  // TIER 2: Groq Whisper via REST API (whisper-large-v3-turbo)
+    59→    59→  try {
+    60→    60→    const groqKey = process.env.NEXT_PUBLIC_GROQ_API_KEY
+    61→    61→    if (!groqKey || groqKey === 'placeholder_groq_key') return ''
+    62→    62→
+    63→    63→    const arrayBuffer = await audioFile.arrayBuffer()
+    64→    64→    const blob = new Blob([arrayBuffer], { type: audioFile.type || 'audio/webm' })
+    65→    65→    const formData = new FormData()
+    66→    66→    formData.append('file', blob, audioFile.name || 'recording.webm')
+    67→    67→    formData.append('model', 'whisper-large-v3-turbo')
+    68→    68→    formData.append('response_format', 'json')
+    69→    69→
+    70→    70→    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    71→    71→      method: 'POST',
+    72→    72→      headers: { Authorization: `Bearer ${groqKey}` },
+    73→    73→      body: formData,
+    74→    74→    })
+    75→    75→
+    76→    76→    if (response.ok) {
+    77→    77→      const data = await response.json()
+    78→    78→      if (data.text?.trim()) {
+    79→    79→        console.log('[capture] Audio transcription: Groq Whisper (Tier 2) succeeded')
+    80→    80→        return data.text.trim()
+    81→    81→      }
+    82→    82→    }
+    83→    83→  } catch (err) {
+    84→    84→    console.error('[capture] Groq Whisper fallback failed:', err instanceof Error ? err.message : 'Unknown')
+    85→    85→  }
+    86→    86→
+    87→    87→  return ''
+    88→    88→}
+    89→    89→
+    90→    90→// ═══════════════════════════════════════════════════════════════════════
+    91→    91→// ─── IMAGE UPLOAD TO SUPABASE STORAGE ─────────────────────────────────
+    92→    92→// ═══════════════════════════════════════════════════════════════════════
+    93→    93→async function uploadImageToStorage(imageFile: File, userId: string): Promise<string | null> {
+    94→    94→  try {
+    95→    95→    const supabase = await getSupabaseServer()
+    96→    96→    const arrayBuffer = await imageFile.arrayBuffer()
+    97→    97→    const buffer = Buffer.from(arrayBuffer)
+    98→    98→
+    99→    99→    const ext = imageFile.name.split('.').pop() || 'png'
+   100→   100→    const timestamp = Date.now()
+   101→   101→    const randomSuffix = Math.random().toString(36).slice(2, 8)
+   102→   102→    const filePath = `${userId}/${timestamp}-${randomSuffix}.${ext}`
+   103→   103→
+   104→   104→    const { error: uploadError } = await supabase.storage
+   105→   105→      .from('memories')
+   106→   106→      .upload(filePath, buffer, {
+   107→   107→        contentType: imageFile.type || 'image/png',
+   108→   108→        upsert: false,
+   109→   109→      })
+   110→   110→
+   111→   111→    if (uploadError) {
+   112→   112→      console.error('[capture] Storage upload failed:', uploadError.message)
+   113→   113→      return null
+   114→   114→    }
+   115→   115→
+   116→   116→    const { data: urlData } = supabase.storage.from('memories').getPublicUrl(filePath)
+   117→   117→    return urlData?.publicUrl || null
+   118→   118→  } catch (err) {
+   119→   119→    console.error('[capture] Image upload failed:', err instanceof Error ? err.message : 'Unknown')
+   120→   120→    return null
+   121→   121→  }
+   122→   122→}
+   123→   123→
+   124→   124→// ═══════════════════════════════════════════════════════════════════════
+   125→   125→// ─── COGNITIVE SYNTHESIS ENGINE — 3-TIER AI PIPELINE ─────────────────
+   126→   126→// Tier 1: z-ai-web-dev-sdk (always available, no API key needed)
+   127→   127→// Tier 2: Gemini 1.5 Flash (if API key configured)
+   128→   128→// Tier 3: Keyword-based fallback (always available)
+   129→   129→// ═══════════════════════════════════════════════════════════════════════
+   130→   130→interface CognitiveResult {
+   131→   131→  summary: string
+   132→   132→  deepInsight: string
+   133→   133→  tags: string[]
+   134→   134→}
+   135→   135→
+   136→   136→const COGNITIVE_SYSTEM_PROMPT = `You are the sovereign intelligence core of Aether. Synthesize the raw input data into an exquisite, natural, human-like 2-sentence summary for a timeline feed, along with a deep professional conceptual insight. Do not return markdown headers or labels. Return strictly a single, valid JSON object formatted exactly like this:
+   137→   137→{
+   138→   138→  "summary": "The 2-sentence summary string.",
+   139→   139→  "deep_insight": "The deep professional analysis string.",
+   140→   140→  "tags": ["keyword1", "keyword2", "keyword3"]
+   141→   141→}
+   142→   142→
+   143→   143→Rules:
+   144→   144→- summary: Exactly 2 sentences. Completely natural, human-readable. No robotic phrasing, no filler, no labels like "Summary:". Pure insight.
+   145→   145→- deep_insight: 3-4 sentences of deeply analytical, professionally insightful cognitive expansion. Reveal hidden connections, implications, or patterns. Be specific and intellectually rigorous. No platitudes.
+   146→   146→- tags: Array of exactly 3 concise, lowercase keyword strings that represent the memory's domain. Be specific.
+   147→   147→- Return ONLY the raw JSON object. No markdown formatting, no code blocks, no explanation, no extra text.`
+   148→   148→
+   149→   149→async function generateCognitiveSynthesis(rawText: string): Promise<CognitiveResult> {
+   150→   150→  const empty: CognitiveResult = { summary: '', deepInsight: '', tags: [] }
+   151→   151→  if (!rawText.trim()) return empty
+   152→   152→
+   153→   153→  // ── TIER 1: z-ai-web-dev-sdk (primary, no API key needed) ──────────
+   154→   154→  try {
+   155→   155→    const ZAI = (await import('z-ai-web-dev-sdk')).default
+   156→   156→    const zai = await ZAI.create()
+   157→   157→
+   158→   158→    const completion = await zai.chat.completions.create({
+   159→   159→      messages: [
+   160→   160→        { role: 'assistant', content: COGNITIVE_SYSTEM_PROMPT },
+   161→   161→        { role: 'user', content: `Raw input:\n${rawText.slice(0, 2000)}` },
+   162→   162→      ],
+   163→   163→      thinking: { type: 'disabled' },
+   164→   164→    })
+   165→   165→
+   166→   166→    const responseText = completion.choices[0]?.message?.content?.trim() || ''
+   167→   167→    const parsed = parseCognitiveJSON(responseText)
+   168→   168→    if (parsed.summary || parsed.deepInsight || parsed.tags.length > 0) {
+   169→   169→      console.log('[capture] Cognitive synthesis: z-ai-web-dev-sdk (Tier 1) succeeded')
+   170→   170→      return parsed
+   171→   171→    }
+   172→   172→  } catch (err) {
+   173→   173→    console.error('[capture] z-ai synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+   174→   174→  }
+   175→   175→
+   176→   176→  // ── TIER 2: Gemini 1.5 Flash (if API key available) ───────────────
+   177→   177→  try {
+   178→   178→    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+   179→   179→    if (!apiKey) throw new Error('No Gemini key')
+   180→   180→
+   181→   181→    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+   182→   182→    const genAI = new GoogleGenerativeAI(apiKey)
+   183→   183→    const model = genAI.getGenerativeModel({
+   184→   184→      model: 'gemini-2.0-flash',
+   185→   185→      generationConfig: {
+   186→   186→        temperature: 0.5,
+   187→   187→        maxOutputTokens: 600,
+   188→   188→        responseMimeType: 'application/json',
+   189→   189→      },
+   190→   190→    })
+   191→   191→
+   192→   192→    const result = await model.generateContent({
+   193→   193→      contents: [
+   194→   194→        {
+   195→   195→          role: 'user',
+   196→   196→          parts: [{ text: `${COGNITIVE_SYSTEM_PROMPT}\n\nRaw input:\n${rawText.slice(0, 2000)}` }],
+   197→   197→        },
+   198→   198→      ],
+   199→   199→    })
+   200→   200→
+   201→   201→    const responseText = result.response.text().trim()
+   202→   202→    const parsed = parseCognitiveJSON(responseText)
+   203→   203→    if (parsed.summary || parsed.deepInsight || parsed.tags.length > 0) {
+   204→   204→      console.log('[capture] Cognitive synthesis: Gemini Flash (Tier 2) succeeded')
+   205→   205→      return parsed
+   206→   206→    }
+   207→   207→  } catch (err) {
+   208→   208→    console.error('[capture] Gemini synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+   209→   209→  }
+   210→   210→
+   211→   211→  // ── TIER 3: Keyword fallback (always works) ───────────────────────
+   212→   212→  console.log('[capture] All AI tiers failed — using keyword fallback')
+   213→   213→  return empty
+   214→   214→}
+   215→   215→
+   216→   216→function parseCognitiveJSON(responseText: string): CognitiveResult {
+   217→   217→  // Extract JSON from response (handle markdown code blocks)
+   218→   218→  const jsonMatch = responseText.match(/\{[\s\S]*\}/)
+   219→   219→  if (jsonMatch) {
+   220→   220→    try {
+   221→   221→      const parsed = JSON.parse(jsonMatch[0])
+   222→   222→      return {
+   223→   223→        summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : '',
+   224→   224→        deepInsight: typeof parsed.deep_insight === 'string' ? parsed.deep_insight.trim() : '',
+   225→   225→        tags: Array.isArray(parsed.tags)
+   226→   226→          ? parsed.tags
+   227→   227→              .filter((t: unknown) => typeof t === 'string')
+   228→   228→              .map((t: string) => t.toLowerCase().trim())
+   229→   229→              .filter(Boolean)
+   230→   230→              .slice(0, 5)
+   231→   231→          : [],
+   232→   232→      }
+   233→   233→    } catch {
+   234→   234→      // JSON parse failed — continue to regex extraction
+   235→   235→    }
+   236→   236→  }
+   237→   237→
+   238→   238→  // Fallback: try to extract individual fields via regex
+   239→   239→  const summaryMatch = responseText.match(/"summary"\s*:\s*"([^"]*)"/)
+   240→   240→  const insightMatch = responseText.match(/"deep_insight"\s*:\s*"([^"]*)"/)
+   241→   241→
+   242→   242→  return {
+   243→   243→    summary: summaryMatch?.[1]?.trim() || '',
+   244→   244→    deepInsight: insightMatch?.[1]?.trim() || '',
+   245→   245→    tags: [],
+   246→   246→  }
+   247→   247→}
+   248→   248→
+   249→   249→// ═══════════════════════════════════════════════════════════════════════
+   250→   250→// ─── AUTONOMOUS COLLECTIONS ENGINE ───────────────────────────────────
+   251→   251→// Rule 1: If a new memory's tags match an existing collection name,
+   252→   252→//         auto-assign the memory to that collection.
+   253→   253→// Rule 2: If 10+ uncollected memories share a conceptual tag grouping,
+   254→   254→//         auto-create a new collection and batch-assign those memories.
+   255→   255→// ═══════════════════════════════════════════════════════════════════════
+   256→   256→
+   257→   257→async function runAutonomousCollections(
+   258→   258→  memoryId: string,
+   259→   259→  memoryTags: string[],
+   260→   260→  userId: string
+   261→   261→): Promise<void> {
+   262→   262→  try {
+   263→   263→    await matchToExistingCollections(memoryId, memoryTags, userId)
+   264→   264→    await checkAutoCollectionRule(userId)
+   265→   265→  } catch (err) {
+   266→   266→    console.error('[capture] Autonomous collections error:', err instanceof Error ? err.message : 'Unknown')
+   267→   267→  }
+   268→   268→}
+   269→   269→
+   270→   270→async function matchToExistingCollections(
+   271→   271→  memoryId: string,
+   272→   272→  memoryTags: string[],
+   273→   273→  userId: string
+   274→   274→): Promise<void> {
+   275→   275→  try {
+   276→   276→    const supabase = await getSupabaseServer()
+   277→   277→
+   278→   278→    // Fetch all user's collections
+   279→   279→    const { data: userCollections, error: collError } = await supabase
+   280→   280→      .from('collections')
+   281→   281→      .select('id, name')
+   282→   282→      .eq('user_id', userId)
+   283→   283→
+   284→   284→    if (collError || !userCollections) return
+   285→   285→
+   286→   286→    for (const collection of userCollections) {
+   287→   287→      const collNameLower = collection.name.toLowerCase()
+   288→   288→
+   289→   289→      // Check if any of the memory's tags match this collection's name
+   290→   290→      const tagMatches = memoryTags.some(
+   291→   291→        (tag) =>
+   292→   292→          collNameLower.includes(tag) ||
+   293→   293→          tag.includes(collNameLower) ||
+   294→   294→          levenshteinSimilarity(collNameLower, tag) > 0.6
+   295→   295→      )
+   296→   296→
+   297→   297→      if (tagMatches) {
+   298→   298→        // Check if this junction already exists
+   299→   299→        const { data: existingJunction } = await supabase
+   300→   300→          .from('memory_collections')
+   301→   301→          .select('id')
+   302→   302→          .eq('memory_id', memoryId)
+   303→   303→          .eq('collection_id', collection.id)
+   304→   304→          .limit(1)
+   305→   305→
+   306→   306→        if (!existingJunction || existingJunction.length === 0) {
+   307→   307→          await supabase.from('memory_collections').insert({
+   308→   308→            memory_id: memoryId,
+   309→   309→            collection_id: collection.id,
+   310→   310→          })
+   311→   311→          console.log(`[capture] Auto-assigned memory ${memoryId} to collection "${collection.name}"`)
+   312→   312→        }
+   313→   313→      }
+   314→   314→    }
+   315→   315→  } catch (err) {
+   316→   316→    console.error('[capture] Collection matching error:', err instanceof Error ? err.message : 'Unknown')
+   317→   317→  }
+   318→   318→}
+   319→   319→
+   320→   320→async function checkAutoCollectionRule(userId: string): Promise<void> {
+   321→   321→  try {
+   322→   322→    const supabase = await getSupabaseServer()
+   323→   323→
+   324→   324→    // Fetch all user's memories that have tags
+   325→   325→    const { data: allMemories, error: memError } = await supabase
+   326→   326→      .from('memories')
+   327→   327→      .select('id, tags')
+   328→   328→      .eq('user_id', userId)
+   329→   329→      .neq('tags', '')
+   330→   330→
+   331→   331→    if (memError || !allMemories || allMemories.length < 10) return
+   332→   332→
+   333→   333→    // Fetch all existing junction rows to determine which memories are collected
+   334→   334→    const { data: junctions } = await supabase
+   335→   335→      .from('memory_collections')
+   336→   336→      .select('memory_id')
+   337→   337→
+   338→   338→    const collectedMemoryIds = new Set((junctions || []).map((j) => j.memory_id))
+   339→   339→
+   340→   340→    // Filter to uncollected memories only
+   341→   341→    const uncollectedMemories = allMemories.filter((m) => !collectedMemoryIds.has(m.id))
+   342→   342→
+   343→   343→    if (uncollectedMemories.length < 10) return
+   344→   344→
+   345→   345→    // Build tag frequency map from uncollected memories
+   346→   346→    const tagFrequency: Record<string, string[]> = {}
+   347→   347→    for (const mem of uncollectedMemories) {
+   348→   348→      const memTags = (mem.tags as string)
+   349→   349→        .split(',')
+   350→   350→        .map((t) => t.trim().toLowerCase())
+   351→   351→        .filter(Boolean)
+   352→   352→      for (const tag of memTags) {
+   353→   353→        if (!tagFrequency[tag]) tagFrequency[tag] = []
+   354→   354→        tagFrequency[tag].push(mem.id)
+   355→   355→      }
+   356→   356→    }
+   357→   357→
+   358→   358→    // Fetch existing collection names to avoid duplicates
+   359→   359→    const { data: existingCollections } = await supabase
+   360→   360→      .from('collections')
+   361→   361→      .select('name')
+   362→   362→      .eq('user_id', userId)
+   363→   363→
+   364→   364→    const existingNames = new Set(
+   365→   365→      (existingCollections || []).map((c) => c.name.toLowerCase())
+   366→   366→    )
+   367→   367→
+   368→   368→    const clusterColors = [
+   369→   369→      '#6D597A', '#B56576', '#355070', '#EA526F',
+   370→   370→      '#23B5D3', '#7B2D8E', '#F18F01', '#C73E1D',
+   371→   371→      '#2D936C', '#566E3D', '#8B5CF6', '#EC4899',
+   372→   372→    ]
+   373→   373→    const { count: collectionCount } = await supabase
+   374→   374→      .from('collections')
+   375→   375→      .select('*', { count: 'exact', head: true })
+   376→   376→      .eq('user_id', userId)
+   377→   377→    let colorIdx = collectionCount || 0
+   378→   378→
+   379→   379→    // Find tag clusters that hit 10+ memories
+   380→   380→    for (const [tag, memoryIds] of Object.entries(tagFrequency)) {
+   381→   381→      if (memoryIds.length >= 10) {
+   382→   382→        const collectionName = tag.charAt(0).toUpperCase() + tag.slice(1)
+   383→   383→
+   384→   384→        // Skip if a collection with this name already exists
+   385→   385→        if (existingNames.has(collectionName.toLowerCase())) continue
+   386→   386→
+   387→   387→        const color = clusterColors[colorIdx % clusterColors.length]
+   388→   388→        colorIdx++
+   389→   389→
+   390→   390→        // Create the new collection
+   391→   391→        const { data: newCollection, error: createError } = await supabase
+   392→   392→          .from('collections')
+   393→   393→          .insert({
+   394→   394→            user_id: userId,
+   395→   395→            name: collectionName,
+   396→   396→            icon: getTagIcon(tag),
+   397→   397→            color,
+   398→   398→          })
+   399→   399→          .select('id')
+   400→   400→          .single()
+   401→   401→
+   402→   402→        if (createError || !newCollection) {
+   403→   403→          console.error('[capture] Auto-collection creation failed:', createError?.message)
+   404→   404→          continue
+   405→   405→        }
+   406→   406→
+   407→   407→        // Batch-assign all matching memories to this new collection
+   408→   408→        const junctionInserts = memoryIds.slice(0, 100).map((memId) => ({
+   409→   409→          memory_id: memId,
+   410→   410→          collection_id: newCollection.id,
+   411→   411→        }))
+   412→   412→
+   413→   413→        const { error: junctionError } = await supabase
+   414→   414→          .from('memory_collections')
+   415→   415→          .insert(junctionInserts)
+   416→   416→
+   417→   417→        if (junctionError) {
+   418→   418→          console.error('[capture] Junction insert failed:', junctionError.message)
+   419→   419→        } else {
+   420→   420→          console.log(`[capture] Auto-created collection "${collectionName}" with ${memoryIds.length} memories`)
+   421→   421→          existingNames.add(collectionName.toLowerCase())
+   422→   422→        }
+   423→   423→      }
+   424→   424→    }
+   425→   425→  } catch (err) {
+   426→   426→    console.error('[capture] Auto-collection rule error:', err instanceof Error ? err.message : 'Unknown')
+   427→   427→  }
+   428→   428→}
+   429→   429→
+   430→   430→// ─── Tag-to-icon mapping for auto-created collections ──────────────
+   431→   431→function getTagIcon(tag: string): string {
+   432→   432→  const iconMap: Record<string, string> = {
+   433→   433→    work: '\u{1F4BC}',
+   434→   434→    personal: '\u{1F9D8}',
+   435→   435→    travel: '\u{2708}\u{FE0F}',
+   436→   436→    learning: '\u{1F4DA}',
+   437→   437→    code: '\u{26A1}',
+   438→   438→    design: '\u{1F3A8}',
+   439→   439→    ai: '\u{1F916}',
+   440→   440→    recipe: '\u{1F373}',
+   441→   441→    idea: '\u{1F4A1}',
+   442→   442→    finance: '\u{1F4B0}',
+   443→   443→    link: '\u{1F517}',
+   444→   444→    task: '\u{2705}',
+   445→   445→    health: '\u{2764}\u{FE0F}',
+   446→   446→    music: '\u{1F3B5}',
+   447→   447→  }
+   448→   448→  return iconMap[tag] || '\u{1F4C1}'
+   449→   449→}
+   450→   450→
+   451→   451→// ─── Levenshtein similarity for fuzzy tag matching ─────────────────
+   452→   452→function levenshteinSimilarity(a: string, b: string): number {
+   453→   453→  if (a === b) return 1
+   454→   454→  if (!a.length || !b.length) return 0
+   455→   455→
+   456→   456→  const matrix: number[][] = []
+   457→   457→  for (let i = 0; i <= b.length; i++) matrix[i] = [i]
+   458→   458→  for (let j = 0; j <= a.length; j++) matrix[0][j] = j
+   459→   459→
+   460→   460→  for (let i = 1; i <= b.length; i++) {
+   461→   461→    for (let j = 1; j <= a.length; j++) {
+   462→   462→      const cost = b[i - 1] === a[j - 1] ? 0 : 1
+   463→   463→      matrix[i][j] = Math.min(
+   464→   464→        matrix[i - 1][j] + 1,
+   465→   465→        matrix[i][j - 1] + 1,
+   466→   466→        matrix[i - 1][j - 1] + cost
+   467→   467→      )
+   468→   468→    }
+   469→   469→  }
+   470→   470→
+   471→   471→  const maxLen = Math.max(a.length, b.length)
+   472→   472→  return 1 - matrix[b.length][a.length] / maxLen
+   473→   473→}
+   474→   474→
+   475→   475→// ═══════════════════════════════════════════════════════════════════════
+   476→   476→// ─── BUILD MEMORY SHAPE FROM SUPABASE ROW ────────────────────────────
+   477→   477→// ═══════════════════════════════════════════════════════════════════════
+   478→   478→function buildMemoryResponse(
+   479→   479→  row: Record<string, unknown>,
+   480→   480→  collections: { id: string; name: string; color: string; icon: string }[] = []
+   481→   481→) {
+   482→   482→  return {
+   483→   483→    id: row.id as string,
+   484→   484→    type: (row.type as string) || 'text',
+   485→   485→    title: (row.title as string) || '',
+   486→   486→    content: (row.content as string) || '',
+   487→   487→    summary: (row.summary as string) || null,
+   488→   488→    deepInsight: (row.deep_insight as string) || (row.deepInsight as string) || null,
+   489→   489→    tags: row.tags ? (row.tags as string).split(',').filter(Boolean) : [],
+   490→   490→    sourceUrl: row.source_url ?? row.sourceUrl ?? null,
+   491→   491→    fileUrl: row.file_url ?? row.fileUrl ?? null,
+   492→   492→    imagePreview: row.image_preview ?? row.imagePreview ?? null,
+   493→   493→    imageUrl: row.image_url ?? row.imageUrl ?? null,
+   494→   494→    recap: row.recap ?? null,
+   495→   495→    isFavorite: (row.is_favorite ?? row.isFavorite ?? false) as boolean,
+   496→   496→    createdAt: (row.created_at ?? row.createdAt ?? new Date().toISOString()) as string,
+   497→   497→    updatedAt: (row.updated_at ?? row.updatedAt ?? new Date().toISOString()) as string,
+   498→   498→    collections,
+   499→   499→  }
+   500→   500→}
+   501→   501→
+   502→   502→// ═══════════════════════════════════════════════════════════════════════
+   503→   503→// ─── POST /api/capture — THE UNIVERSAL CAPTURE ENGINE ────────────────
+   504→   504→// ═══════════════════════════════════════════════════════════════════════
+   505→   505→export async function POST(req: NextRequest) {
+   506→   506→  try {
+   507→   507→    // ── STEP 1: MULTI-MEDIA PAYLOAD INGESTION ─────────────────────
+   508→   508→    const formData = await req.formData()
+   509→   509→
+   510→   510→    const textInput = (formData.get('text') as string) || ''
+   511→   511→    const urlInput = (formData.get('url') as string) || ''
+   512→   512→    const typeOverride = (formData.get('type') as string) || ''
+   513→   513→    const audioFile = formData.get('audio') as File | null
+   514→   514→    const imageFile = formData.get('image') as File | null
+   515→   515→
+   516→   516→    const hasText = textInput.trim().length > 0
+   517→   517→    const hasUrl = urlInput.trim().length > 0
+   518→   518→    const hasAudio = audioFile !== null && audioFile.size > 0
+   519→   519→    const hasImage = imageFile !== null && imageFile.size > 0
+   520→   520→
+   521→   521→    if (!hasText && !hasUrl && !hasAudio && !hasImage) {
+   522→   522→      return NextResponse.json(
+   523→   523→        { success: false, error: 'No content provided. Send text, audio, image, or url.' },
+   524→   524→        { status: 400 }
+   525→   525→      )
+   526→   526→    }
+   527→   527→
+   528→   528→    // ── STEP 2: AUTHENTICATE USER VIA SUPABASE ────────────────────
+   529→   529→    let supabaseUserId: string | null = null
+   530→   530→    let useSupabase = false
+   531→   531→
+   532→   532→    try {
+   533→   533→      const supabase = await getSupabaseServer()
+   534→   534→      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+   535→   535→      if (!authError && authUser) {
+   536→   536→        supabaseUserId = authUser.id
+   537→   537→        useSupabase = true
+   538→   538→      }
+   539→   539→    } catch {
+   540→   540→      useSupabase = false
+   541→   541→    }
+   542→   542→
+   543→   543→    // ── STEP 3: DISPATCH CHANNELS ─────────────────────────────────
+   544→   544→
+   545→   545→    // 3a: Transcribe audio if present (z-ai ASR → Groq Whisper)
+   546→   546→    let audioTranscript = ''
+   547→   547→    if (hasAudio && audioFile) {
+   548→   548→      audioTranscript = await transcribeAudio(audioFile)
+   549→   549→    }
+   550→   550→
+   551→   551→    // 3b: Upload image to Supabase Storage if present
+   552→   552→    let imageUrl: string | null = null
+   553→   553→    let imagePreviewUrl: string | null = null
+   554→   554→    if (hasImage && imageFile) {
+   555→   555→      if (useSupabase && supabaseUserId) {
+   556→   556→        imageUrl = await uploadImageToStorage(imageFile, supabaseUserId)
+   557→   557→      }
+   558→   558→      if (!imageUrl) {
+   559→   559→        // Fallback: base64 preview if storage upload fails or no Supabase
+   560→   560→        try {
+   561→   561→          const arrayBuffer = await imageFile.arrayBuffer()
+   562→   562→          const base64 = Buffer.from(arrayBuffer).toString('base64')
+   563→   563→          const mimeType = imageFile.type || 'image/png'
+   564→   564→          imagePreviewUrl = `data:${mimeType};base64,${base64}`
+   565→   565→        } catch {
+   566→   566→          imagePreviewUrl = null
+   567→   567→        }
+   568→   568→      }
+   569→   569→    }
+   570→   570→
+   571→   571→    // 3c: Determine content type
+   572→   572→    let memoryType = 'text'
+   573→   573→    if (typeOverride && ['text', 'voice', 'link', 'image'].includes(typeOverride)) {
+   574→   574→      memoryType = typeOverride
+   575→   575→    } else if (hasImage) {
+   576→   576→      memoryType = 'image'
+   577→   577→    } else if (hasAudio && !hasText && !hasUrl) {
+   578→   578→      memoryType = 'voice'
+   579→   579→    } else if (hasUrl || (hasText && /https?:\/\//.test(textInput.toLowerCase()))) {
+   580→   580→      memoryType = 'link'
+   581→   581→    }
+   582→   582→
+   583→   583→    // 3d: Compose the raw content string
+   584→   584→    let rawContent = ''
+   585→   585→    if (audioTranscript.trim()) {
+   586→   586→      rawContent = audioTranscript.trim()
+   587→   587→      if (hasText && textInput.trim()) {
+   588→   588→        rawContent = `${textInput.trim()}\n\n${audioTranscript.trim()}`
+   589→   589→      }
+   590→   590→    } else if (hasText) {
+   591→   591→      rawContent = textInput.trim()
+   592→   592→    }
+   593→   593→
+   594→   594→    const sourceUrl = hasUrl ? urlInput.trim() : memoryType === 'link' ? textInput.trim() : null
+   595→   595→
+   596→   596→    if (hasImage && !rawContent.trim()) {
+   597→   597→      rawContent = imageFile ? `Image: ${imageFile.name}` : 'Image'
+   598→   598→    }
+   599→   599→
+   600→   600→    // Compose the title
+   601→   601→    let title = rawContent.length > 80 ? rawContent.slice(0, 80) + '...' : rawContent
+   602→   602→    if (hasImage && !textInput.trim()) {
+   603→   603→      title = imageFile ? `Image: ${imageFile.name}` : 'Image'
+   604→   604→    }
+   605→   605→
+   606→   606→    // ── STEP 4: HIGH-END COGNITIVE SYNTHESIS (3-TIER AI PIPELINE) ─
+   607→   607→    const textForSynthesis = rawContent || (hasUrl ? urlInput : '')
+   608→   608→    let cleanedSummary: string | null = null
+   609→   609→    let deepInsight: string | null = null
+   610→   610→    let aiTags: string[] = []
+   611→   611→
+   612→   612→    // Always run keyword tags first (instant, free, reliable)
+   613→   613→    const keywordTags = autoGenerateTags(rawContent, title)
+   614→   614→
+   615→   615→    // Run AI synthesis if we have content (with 10-second timeout)
+   616→   616→    if (textForSynthesis.trim()) {
+   617→   617→      try {
+   618→   618→        const synthesisPromise = generateCognitiveSynthesis(textForSynthesis)
+   619→   619→        const timeoutPromise = new Promise<CognitiveResult>((resolve) =>
+   620→   620→          setTimeout(() => resolve({ summary: '', deepInsight: '', tags: [] }), 10000)
+   621→   621→        )
+   622→   622→
+   623→   623→        const cognitive = await Promise.race([synthesisPromise, timeoutPromise])
+   624→   624→        if (cognitive.summary) cleanedSummary = cognitive.summary
+   625→   625→        if (cognitive.deepInsight) deepInsight = cognitive.deepInsight
+   626→   626→        if (cognitive.tags.length > 0) aiTags = cognitive.tags
+   627→   627→      } catch (err) {
+   628→   628→        console.error('[capture] Synthesis error:', err instanceof Error ? err.message : 'Unknown')
+   629→   629→      }
+   630→   630→    }
+   631→   631→
+   632→   632→    // Merge: AI tags take priority, keyword tags fill gaps
+   633→   633→    const finalTags = aiTags.length > 0
+   634→   634→      ? [...new Set([...aiTags, ...keywordTags])].slice(0, 5)
+   635→   635→      : keywordTags
+   636→   636→
+   637→   637→    // ── STEP 5: DATABASE INGESTION & AUTO-COLLECTIONS ─────────────
+   638→   638→    let memory: Record<string, unknown>
+   639→   639→
+   640→   640→    // 5a: Supabase-first insertion (authenticated users with RLS)
+   641→   641→    if (useSupabase && supabaseUserId) {
+   642→   642→      try {
+   643→   643→        const supabase = await getSupabaseServer()
+   644→   644→        const insertData: Record<string, unknown> = {
+   645→   645→          user_id: supabaseUserId,
+   646→   646→          type: memoryType,
+   647→   647→          title,
+   648→   648→          content: rawContent,
+   649→   649→          source_url: sourceUrl || null,
+   650→   650→          tags: finalTags.join(','),
+   651→   651→        }
+   652→   652→
+   653→   653→        if (cleanedSummary) insertData.summary = cleanedSummary
+   654→   654→        if (deepInsight) insertData.deep_insight = deepInsight
+   655→   655→        if (imageUrl) insertData.image_url = imageUrl
+   656→   656→        if (imagePreviewUrl && !imageUrl) insertData.image_preview = imagePreviewUrl
+   657→   657→
+   658→   658→        const { data: memoryRow, error: insertError } = await supabase
+   659→   659→          .from('memories')
+   660→   660→          .insert(insertData)
+   661→   661→          .select('*, memory_collections(collection_id, collections(id, name, color, icon))')
+   662→   662→          .single()
+   663→   663→
+   664→   664→        if (insertError) throw insertError
+   665→   665→
+   666→   666→        const row = memoryRow as Record<string, unknown>
+   667→   667→        const collectionsFromRow = (
+   668→   668→          (row.memory_collections as Record<string, Record<string, unknown>>[]) || []
+   669→   669→        ).map((mc) => ({
+   670→   670→          id: (mc.collections as Record<string, unknown>)?.id as string,
+   671→   671→          name: (mc.collections as Record<string, unknown>)?.name as string,
+   672→   672→          color: (mc.collections as Record<string, unknown>)?.color as string,
+   673→   673→          icon: (mc.collections as Record<string, unknown>)?.icon as string,
+   674→   674→        }))
+   675→   675→
+   676→   676→        memory = buildMemoryResponse(row, collectionsFromRow)
+   677→   677→
+   678→   678→        // Background: autonomous collections engine
+   679→   679→        runAutonomousCollections(memory.id as string, finalTags, supabaseUserId).catch(() => {})
+   680→   680→
+   681→   681→        return NextResponse.json({ success: true, memory })
+   682→   682→      } catch (err) {
+   683→   683→        console.error('[capture] Supabase insertion failed, falling back to Prisma:', err instanceof Error ? err.message : 'Unknown')
+   684→   684→      }
+   685→   685→    }
+   686→   686→
+   687→   687→    // 5b: Fallback — Prisma SQLite insertion (local / no Supabase)
+   688→   688→    try {
+   689→   689→      const { db } = await import('@/lib/db')
+   690→   690→
+   691→   691→      const prismaMemory = await db.memory.create({
+   692→   692→        data: {
+   693→   693→          type: memoryType,
+   694→   694→          title,
+   695→   695→          content: rawContent,
+   696→   696→          summary: cleanedSummary,
+   697→   697→          deepInsight,
+   698→   698→          sourceUrl: sourceUrl || null,
+   699→   699→          tags: finalTags.join(','),
+   700→   700→          imageUrl: imageUrl || null,
+   701→   701→          imagePreview: imagePreviewUrl && !imageUrl ? imagePreviewUrl : null,
+   702→   702→        },
+   703→   703→        include: {
+   704→   704→          collections: {
+   705→   705→            include: {
+   706→   706→              collection: {
+   707→   707→                select: { id: true, name: true, color: true, icon: true },
+   708→   708→              },
+   709→   709→            },
+   710→   710→          },
+   711→   711→        },
+   712→   712→      })
+   713→   713→
+   714→   714→      memory = buildMemoryResponse(
+   715→   715→        {
+   716→   716→          id: prismaMemory.id,
+   717→   717→          type: prismaMemory.type,
+   718→   718→          title: prismaMemory.title,
+   719→   719→          content: prismaMemory.content,
+   720→   720→          summary: prismaMemory.summary,
+   721→   721→          deepInsight: prismaMemory.deepInsight,
+   722→   722→          tags: prismaMemory.tags,
+   723→   723→          sourceUrl: prismaMemory.sourceUrl,
+   724→   724→          fileUrl: prismaMemory.fileUrl,
+   725→   725→          imagePreview: prismaMemory.imagePreview,
+   726→   726→          imageUrl: prismaMemory.imageUrl,
+   727→   727→          isFavorite: prismaMemory.isFavorite,
+   728→   728→          created_at: prismaMemory.createdAt.toISOString(),
+   729→   729→          updated_at: prismaMemory.updatedAt.toISOString(),
+   730→   730→        },
+   731→   731→        prismaMemory.collections.map((mc) => ({
+   732→   732→          id: mc.collection.id,
+   733→   733→          name: mc.collection.name,
+   734→   734→          color: mc.collection.color,
+   735→   735→          icon: mc.collection.icon,
+   736→   736→        }))
+   737→   737→      )
+   738→   738→
+   739→   739→      return NextResponse.json({ success: true, memory })
+   740→   740→    } catch (err) {
+   741→   741→      console.error('[capture] Prisma insertion failed:', err instanceof Error ? err.message : 'Unknown')
+   742→   742→      return NextResponse.json(
+   743→   743→        { success: false, error: 'Failed to save memory to database' },
+   744→   744→        { status: 500 }
+   745→   745→      )
+   746→   746→    }
+   747→   747→
+   748→   748→  } catch (error) {
+   749→   749→    console.error('[capture] Unhandled error:', error instanceof Error ? error.message : 'Unknown')
+   750→   750→    return NextResponse.json(
+   751→   751→      { success: false, error: 'Internal server error during capture' },
+   752→   752→      { status: 500 }
+   753→   753→    )
+   754→   754→  }
+   755→   755→}
+   756→   756→
+   757→   757→// ═══════════════════════════════════════════════════════════════════════
+   758→   758→// ─── DELETE /api/capture — PURGE MEMORY FROM SUPABASE ────────────────
+   759→   759→// ═══════════════════════════════════════════════════════════════════════
+   760→   760→export async function DELETE(req: NextRequest) {
+   761→   761→  try {
+   762→   762→    const { searchParams } = new URL(req.url)
+   763→   763→    const memoryId = searchParams.get('id')
+   764→   764→
+   765→   765→    if (!memoryId) {
+   766→   766→      return NextResponse.json(
+   767→   767→        { success: false, error: 'Memory ID is required' },
+   768→   768→        { status: 400 }
+   769→   769→      )
+   770→   770→    }
+   771→   771→
+   772→   772→    // Try Supabase deletion first
+   773→   773→    let supabaseDeleted = false
+   774→   774→    try {
+   775→   775→      const supabase = await getSupabaseServer()
+   776→   776→      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+   777→   777→
+   778→   778→      if (!authError && authUser) {
+   779→   779→        // Delete junction rows first (foreign key constraint)
+   780→   780→        const { error: junctionError } = await supabase
+   781→   781→          .from('memory_collections')
+   782→   782→          .delete()
+   783→   783→          .eq('memory_id', memoryId)
+   784→   784→
+   785→   785→        if (junctionError) {
+   786→   786→          console.error('[capture] Junction delete error:', junctionError.message)
+   787→   787→        }
+   788→   788→
+   789→   789→        // Delete the memory itself
+   790→   790→        const { error: deleteError } = await supabase
+   791→   791→          .from('memories')
+   792→   792→          .delete()
+   793→   793→          .eq('id', memoryId)
+   794→   794→          .eq('user_id', authUser.id)
+   795→   795→
+   796→   796→        if (!deleteError) {
+   797→   797→          supabaseDeleted = true
+   798→   798→        } else {
+   799→   799→          console.error('[capture] Supabase delete failed:', deleteError.message)
+   800→   800→        }
+   801→   801→      }
+   802→   802→    } catch {
+   803→   803→      // Supabase not available — fall through to Prisma
+   804→   804→    }
+   805→   805→
+   806→   806→    // Fallback: Prisma deletion (always attempt if Supabase didn't succeed)
+   807→   807→    if (!supabaseDeleted) {
+   808→   808→      try {
+   809→   809→        const { db } = await import('@/lib/db')
+   810→   810→        await db.memory.delete({ where: { id: memoryId } })
+   811→   811→      } catch (prismaErr) {
+   812→   812→        console.error('[capture] Prisma delete failed:', prismaErr instanceof Error ? prismaErr.message : 'Unknown')
+   813→   813→        if (!supabaseDeleted) {
+   814→   814→          return NextResponse.json(
+   815→   815→            { success: false, error: 'Failed to delete memory' },
+   816→   816→            { status: 500 }
+   817→   817→          )
+   818→   818→        }
+   819→   819→      }
+   820→   820→    }
+   821→   821→
+   822→   822→    return NextResponse.json({ success: true })
+   823→   823→
+   824→   824→  } catch (error) {
+   825→   825→    console.error('[capture] Delete error:', error instanceof Error ? error.message : 'Unknown')
+   826→   826→    return NextResponse.json(
+   827→   827→      { success: false, error: 'Internal server error during deletion' },
+   828→   828→      { status: 500 }
+   829→   829→    )
+   830→   830→  }
+   831→   831→}
+   832→   832→
