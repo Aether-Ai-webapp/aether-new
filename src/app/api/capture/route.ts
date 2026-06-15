@@ -75,11 +75,216 @@ function autoGenerateTags(content: string, title: string): string[] {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── AUDIO TRANSCRIPTION (z-ai-web-dev-sdk ASR or Groq Whisper) ──────
+// ─── AI COGNITIVE SYNTHESIS (z-ai-web-dev-sdk LLM — ALWAYS AVAILABLE) ─
+// ═══════════════════════════════════════════════════════════════════════
+
+interface AISynthesis {
+  suggested_title: string
+  summary: string
+  deep_insight: string
+  tags: string[]
+  connected_themes: string[]
+}
+
+async function synthesizeWithLLM(rawContent: string): Promise<AISynthesis | null> {
+  // ── PRIMARY: z-ai-web-dev-sdk LLM (always available) ──────────────
+  try {
+    const ZAI = (await import('z-ai-web-dev-sdk')).default
+    const sdk = await ZAI.create()
+
+    const systemPrompt = `You are the sovereign intelligence core of Aether — a personal second-brain system. Analyze this memory capture. Generate:
+1. A clean, concise suggested title (max 60 chars)
+2. A natural 2-sentence summary
+3. A deep professional insight connecting this to broader patterns
+4. 3-5 specific, lowercase tags that capture the essence
+5. 2-3 connected themes — topics that this memory relates to that could link it to other memories
+
+Return STRICTLY a valid JSON object. No markdown, no extra text:
+{
+  "suggested_title": "string",
+  "summary": "string",
+  "deep_insight": "string",
+  "tags": ["tag1", "tag2", "tag3"],
+  "connected_themes": ["theme1", "theme2"]
+}`
+
+    const completion = await sdk.chat.completions.create({
+      messages: [
+        { role: 'assistant', content: systemPrompt },
+        { role: 'user', content: rawContent.slice(0, 4000) },
+      ],
+      thinking: { type: 'disabled' },
+    })
+
+    const responseText = completion.choices[0]?.message?.content
+    if (!responseText) throw new Error('Empty LLM response')
+
+    // Extract JSON from response
+    let jsonStr = responseText.trim()
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+    if (jsonMatch) jsonStr = jsonMatch[0]
+
+    const parsed = JSON.parse(jsonStr)
+
+    if (
+      typeof parsed.suggested_title === 'string' &&
+      typeof parsed.summary === 'string' &&
+      typeof parsed.deep_insight === 'string' &&
+      Array.isArray(parsed.tags)
+    ) {
+      return {
+        suggested_title: parsed.suggested_title,
+        summary: parsed.summary,
+        deep_insight: parsed.deep_insight,
+        tags: parsed.tags.filter((t: unknown) => typeof t === 'string').slice(0, 5),
+        connected_themes: Array.isArray(parsed.connected_themes)
+          ? parsed.connected_themes.filter((t: unknown) => typeof t === 'string').slice(0, 3)
+          : [],
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.warn('z-ai-web-dev-sdk LLM synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+  }
+
+  // ── FALLBACK: Gemini Flash (when API key is set) ──────────────────
+  const geminiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (geminiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai')
+      const genAI = new GoogleGenerativeAI(geminiKey)
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+      const systemPrompt = `You are the sovereign intelligence core of Aether. Analyze this data input. Synthesize an exquisite, natural, human-like 2-sentence summary, a clean suggested title, a deep professional insight, and an array of 3 specific tags. Return strictly a single, valid JSON object formatted exactly like this:
+{
+  "suggested_title": "The optimized title string.",
+  "summary": "The 2-sentence summary string.",
+  "deep_insight": "The deep professional analysis string.",
+  "tags": ["keyword1", "keyword2", "keyword3"],
+  "connected_themes": ["theme1", "theme2"]
+}`
+
+      const result = await model.generateContent({
+        contents: [
+          { role: 'user', parts: [{ text: systemPrompt }] },
+          { role: 'model', parts: [{ text: 'Understood. I will return strictly a JSON object with suggested_title, summary, deep_insight, tags, and connected_themes fields.' }] },
+          { role: 'user', parts: [{ text: rawContent.slice(0, 4000) }] },
+        ],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 800 },
+      })
+
+      const responseText = result.response.text()
+      let jsonStr = responseText.trim()
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+      if (jsonMatch) jsonStr = jsonMatch[0]
+
+      const parsed = JSON.parse(jsonStr)
+
+      if (
+        typeof parsed.suggested_title === 'string' &&
+        typeof parsed.summary === 'string' &&
+        typeof parsed.deep_insight === 'string' &&
+        Array.isArray(parsed.tags)
+      ) {
+        return {
+          suggested_title: parsed.suggested_title,
+          summary: parsed.summary,
+          deep_insight: parsed.deep_insight,
+          tags: parsed.tags.filter((t: unknown) => typeof t === 'string').slice(0, 5),
+          connected_themes: Array.isArray(parsed.connected_themes)
+            ? parsed.connected_themes.filter((t: unknown) => typeof t === 'string').slice(0, 3)
+            : [],
+        }
+      }
+
+      return null
+    } catch (err) {
+      console.warn('Gemini synthesis failed:', err instanceof Error ? err.message : 'Unknown')
+    }
+  }
+
+  return null
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ─── IMAGE VISION ANALYSIS (z-ai-web-dev-sdk VLM — ALWAYS AVAILABLE) ─
+// ═══════════════════════════════════════════════════════════════════════
+
+interface ImageAnalysis {
+  description: string
+  extracted_text: string
+  objects: string[]
+  tags: string[]
+}
+
+async function analyzeImageWithVLM(imageFile: File): Promise<ImageAnalysis | null> {
+  try {
+    const ZAI = (await import('z-ai-web-dev-sdk')).default
+    const sdk = await ZAI.create()
+
+    // Convert image to base64
+    const arrayBuffer = await imageFile.arrayBuffer()
+    const base64Image = Buffer.from(arrayBuffer).toString('base64')
+    const mimeType = imageFile.type || 'image/png'
+
+    const prompt = `Analyze this image in detail. Return a JSON object with:
+- "description": A detailed 2-3 sentence description of what's in the image
+- "extracted_text": Any text visible in the image (OCR). Empty string if none.
+- "objects": Array of main objects/subjects detected (max 5)
+- "tags": Array of 3-5 relevant lowercase tags describing the content
+
+Return STRICTLY valid JSON only, no markdown or extra text.`
+
+    const response = await sdk.chat.completions.createVision({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      thinking: { type: 'disabled' },
+    })
+
+    const responseText = response.choices[0]?.message?.content
+    if (!responseText) return null
+
+    let jsonStr = responseText.trim()
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+    if (jsonMatch) jsonStr = jsonMatch[0]
+
+    const parsed = JSON.parse(jsonStr)
+
+    if (typeof parsed.description === 'string') {
+      return {
+        description: parsed.description || '',
+        extracted_text: parsed.extracted_text || '',
+        objects: Array.isArray(parsed.objects) ? parsed.objects.slice(0, 5) : [],
+        tags: Array.isArray(parsed.tags) ? parsed.tags.filter((t: unknown) => typeof t === 'string').slice(0, 5) : [],
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.warn('VLM image analysis failed:', err instanceof Error ? err.message : 'Unknown')
+    return null
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ─── AUDIO TRANSCRIPTION (z-ai-web-dev-sdk ASR) ──────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 async function transcribeAudio(audioFile: File): Promise<string> {
-  // Try z-ai-web-dev-sdk first (always available in this environment)
+  // Try z-ai-web-dev-sdk ASR first (always available in this environment)
   try {
     const ZAI = (await import('z-ai-web-dev-sdk')).default
     const sdk = await ZAI.create()
@@ -166,75 +371,6 @@ async function uploadImageToStorage(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── GEMINI COGNITIVE SYNTHESIS (optional, when key is set) ──────────
-// ═══════════════════════════════════════════════════════════════════════
-
-interface GeminiSynthesis {
-  suggested_title: string
-  summary: string
-  deep_insight: string
-  tags: string[]
-}
-
-async function synthesizeWithGemini(rawContent: string): Promise<GeminiSynthesis | null> {
-  const geminiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
-  if (!geminiKey) return null
-
-  try {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai')
-    const genAI = new GoogleGenerativeAI(geminiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
-
-    const systemPrompt = `You are the sovereign intelligence core of Aether. Analyze this data input. Synthesize an exquisite, natural, human-like 2-sentence summary, a clean suggested title, a deep professional insight, and an array of 3 specific tags. Do not return markdown headers or labels. Return strictly a single, valid JSON object formatted exactly like this:
-{
-  "suggested_title": "The optimized title string.",
-  "summary": "The 2-sentence summary string.",
-  "deep_insight": "The deep professional analysis string.",
-  "tags": ["keyword1", "keyword2", "keyword3"]
-}`
-
-    const result = await model.generateContent({
-      contents: [
-        { role: 'user', parts: [{ text: systemPrompt }] },
-        { role: 'model', parts: [{ text: 'Understood. I will return strictly a JSON object with suggested_title, summary, deep_insight, and tags fields.' }] },
-        { role: 'user', parts: [{ text: rawContent.slice(0, 4000) }] },
-      ],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 800 },
-    })
-
-    const responseText = result.response.text()
-
-    // Extract JSON from the response (handle potential markdown wrapping)
-    let jsonStr = responseText.trim()
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0]
-    }
-
-    const parsed = JSON.parse(jsonStr)
-
-    if (
-      typeof parsed.suggested_title === 'string' &&
-      typeof parsed.summary === 'string' &&
-      typeof parsed.deep_insight === 'string' &&
-      Array.isArray(parsed.tags)
-    ) {
-      return {
-        suggested_title: parsed.suggested_title,
-        summary: parsed.summary,
-        deep_insight: parsed.deep_insight,
-        tags: parsed.tags.filter((t: unknown) => typeof t === 'string').slice(0, 5),
-      }
-    }
-
-    return null
-  } catch (err) {
-    console.warn('Gemini synthesis failed:', err instanceof Error ? err.message : 'Unknown')
-    return null
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // ─── COLLECTION TAG MATCHING (Supabase only) ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -276,72 +412,6 @@ async function matchOrCreateCollections(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── 10-NOTE AUTO-SWEEP RULE (Supabase only) ─────────────────────────
-// ═══════════════════════════════════════════════════════════════════════
-
-async function autoSweepCollections(
-  supabase: Awaited<ReturnType<typeof getSupabaseRouteClient>>,
-  userId: string
-): Promise<void> {
-  try {
-    const { data: uncollectedMemories } = await supabase
-      .from('memories')
-      .select('id, tags, type')
-      .eq('user_id', userId)
-
-    if (!uncollectedMemories || uncollectedMemories.length < 10) return
-
-    const tagGroups: Record<string, string[]> = {}
-    for (const mem of uncollectedMemories) {
-      if (!mem.tags) continue
-      const memTags = (mem.tags as string).split(',').filter(Boolean)
-      for (const tag of memTags) {
-        if (!tagGroups[tag]) tagGroups[tag] = []
-        tagGroups[tag].push(mem.id as string)
-      }
-    }
-
-    for (const [tag, memoryIds] of Object.entries(tagGroups)) {
-      if (memoryIds.length >= 10) {
-        const { data: existingCol } = await supabase
-          .from('collections')
-          .select('id')
-          .eq('user_id', userId)
-          .ilike('name', `%${tag}%`)
-          .limit(1)
-
-        if (existingCol && existingCol.length > 0) continue
-
-        const displayName = tag.charAt(0).toUpperCase() + tag.slice(1)
-        const { data: newCol } = await supabase
-          .from('collections')
-          .insert({
-            user_id: userId,
-            name: displayName,
-            color: '#6D597A',
-            icon: '📁',
-          })
-          .select('id')
-          .single()
-
-        if (newCol) {
-          const junctionRows = memoryIds.slice(0, 50).map(mid => ({
-            memory_id: mid,
-            collection_id: (newCol as { id: string }).id,
-          }))
-
-          await supabase
-            .from('memory_collections')
-            .insert(junctionRows)
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Auto-sweep failed:', err instanceof Error ? err.message : 'Unknown')
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // ─── SAVE TO PRISMA (Local Fallback — always works) ─────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -354,6 +424,8 @@ async function saveToPrisma(data: {
   tags: string[]
   sourceUrl: string | null
   imageUrl: string | null
+  imagePreview: string | null
+  recap: string | null
 }) {
   const memory = await db.memory.create({
     data: {
@@ -365,6 +437,8 @@ async function saveToPrisma(data: {
       tags: data.tags.join(','),
       sourceUrl: data.sourceUrl,
       imageUrl: data.imageUrl,
+      imagePreview: data.imagePreview,
+      recap: data.recap,
     },
     include: {
       collections: {
@@ -403,6 +477,80 @@ async function saveToPrisma(data: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// ─── FIND CONNECTED MEMORIES (for AI Brain) ─────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+
+async function findConnectedMemories(
+  newMemoryTags: string[],
+  newMemoryContent: string,
+  newMemoryId: string
+): Promise<{ id: string; title: string; reason: string }[]> {
+  try {
+    // Get all existing memories from Prisma
+    const allMemories = await db.memory.findMany({
+      where: {
+        id: { not: newMemoryId },
+      },
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        tags: true,
+        type: true,
+      },
+      take: 50,
+      orderBy: { createdAt: 'desc' },
+    })
+
+    if (allMemories.length === 0) return []
+
+    // ── Quick tag-based matching (instant, no LLM needed) ─────────
+    const connected: { id: string; title: string; reason: string; score: number }[] = []
+
+    for (const mem of allMemories) {
+      const memTags = mem.tags ? mem.tags.split(',').filter(Boolean) : []
+      const overlapTags = memTags.filter(t => newMemoryTags.includes(t.toLowerCase()))
+
+      if (overlapTags.length > 0) {
+        connected.push({
+          id: mem.id,
+          title: mem.title || 'Untitled',
+          reason: `Shares tags: ${overlapTags.join(', ')}`,
+          score: overlapTags.length * 2,
+        })
+      }
+
+      // Content similarity — check for common meaningful words
+      const contentWords = mem.content.toLowerCase().split(/\s+/).filter(w => w.length > 4)
+      const newWords = newMemoryContent.toLowerCase().split(/\s+/).filter(w => w.length > 4)
+      const overlapWords = contentWords.filter(w => newWords.includes(w))
+      if (overlapWords.length >= 2) {
+        const existing = connected.find(c => c.id === mem.id)
+        if (existing) {
+          existing.score += overlapWords.length
+        } else {
+          connected.push({
+            id: mem.id,
+            title: mem.title || 'Untitled',
+            reason: `Similar content themes`,
+            score: overlapWords.length,
+          })
+        }
+      }
+    }
+
+    // Sort by score and return top 5
+    return connected
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map(({ id, title, reason }) => ({ id, title, reason }))
+  } catch (err) {
+    console.warn('Find connected memories failed:', err instanceof Error ? err.message : 'Unknown')
+    return []
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // ─── MAIN POST HANDLER ──────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -434,12 +582,14 @@ export async function POST(req: NextRequest) {
       audioTranscript = await transcribeAudio(audioFile)
     }
 
-    // ── STEP 3: Process Image → Upload to Storage (if Supabase available) ──
+    // ── STEP 3: Analyze Image with VLM ──────────────────────────────
+    let imageAnalysis: ImageAnalysis | null = null
     let imageUrl: string | null = null
 
     if (hasImage) {
       memoryType = 'image'
-      // Image upload will be attempted inside the Supabase block below
+      // Run VLM analysis on the image (always works)
+      imageAnalysis = await analyzeImageWithVLM(imageFile)
     }
 
     // ── STEP 4: Assemble Raw Content ────────────────────────────────
@@ -447,32 +597,67 @@ export async function POST(req: NextRequest) {
     if (hasText) rawContent += text.trim()
     if (hasUrl) rawContent += (rawContent ? '\n\n' : '') + `URL: ${url.trim()}`
     if (audioTranscript) rawContent += (rawContent ? '\n\n' : '') + `Voice Transcript:\n${audioTranscript}`
-    if (hasImage && !rawContent) rawContent = 'Image capture'
+
+    // For images, use VLM description as content (not just "Image capture")
+    if (hasImage) {
+      if (imageAnalysis) {
+        const imageContentParts: string[] = []
+        if (imageAnalysis.description) imageContentParts.push(imageAnalysis.description)
+        if (imageAnalysis.extracted_text) imageContentParts.push(`Text in image: ${imageAnalysis.extracted_text}`)
+        if (imageAnalysis.objects.length > 0) imageContentParts.push(`Objects: ${imageAnalysis.objects.join(', ')}`)
+
+        const imageContent = imageContentParts.join('\n\n')
+        rawContent += (rawContent ? '\n\n' : '') + imageContent
+      } else if (!rawContent) {
+        rawContent = 'Image capture'
+      }
+    }
+
     if (!rawContent) rawContent = 'Captured content'
 
     if (hasUrl) memoryType = 'link'
     if (hasAudio && hasImage) memoryType = 'voice'
     if (!hasAudio && !hasImage && !hasUrl) memoryType = 'text'
 
-    // ── STEP 5: AI Cognitive Synthesis (Gemini Flash, optional) ─────
+    // ── STEP 5: AI Cognitive Synthesis (z-ai-web-dev-sdk LLM) ──────
+    // Determine initial title
     let aiTitle = hasText ? text.slice(0, 80) : hasUrl ? 'Saved Link' : hasAudio ? 'Voice Note' : 'Image Capture'
     let aiSummary: string | null = null
     let aiDeepInsight: string | null = null
-    let aiTags = autoGenerateTags(rawContent, aiTitle)
+    let aiTags = autoGenerateTags(rawContent, aiTitle) // keyword fallback always runs
+    let connectedThemes: string[] = []
 
-    if (rawContent.trim() && rawContent.trim() !== 'Image capture' && rawContent.trim() !== 'Captured content') {
-      const synthesis = await synthesizeWithGemini(rawContent)
-      if (synthesis) {
-        aiTitle = synthesis.suggested_title || aiTitle
-        aiSummary = synthesis.summary
-        aiDeepInsight = synthesis.deep_insight
-        if (synthesis.tags.length > 0) {
-          aiTags = synthesis.tags
-        }
+    // Always run LLM synthesis (z-ai-web-dev-sdk is always available)
+    const synthesis = await synthesizeWithLLM(rawContent)
+    if (synthesis) {
+      aiTitle = synthesis.suggested_title || aiTitle
+      aiSummary = synthesis.summary
+      aiDeepInsight = synthesis.deep_insight
+      if (synthesis.tags.length > 0) {
+        // Merge AI tags with keyword tags, deduplicate
+        const allTags = [...new Set([...synthesis.tags, ...aiTags])]
+        aiTags = allTags.slice(0, 6)
+      }
+      if (synthesis.connected_themes.length > 0) {
+        connectedThemes = synthesis.connected_themes
       }
     }
 
-    // ── STEP 6: Try Supabase first (cookie-aware route handler client) ──
+    // For images with VLM analysis, merge VLM tags too
+    if (imageAnalysis && imageAnalysis.tags.length > 0) {
+      const allTags = [...new Set([...aiTags, ...imageAnalysis.tags.map(t => t.toLowerCase())])]
+      aiTags = allTags.slice(0, 6)
+    }
+
+    // ── STEP 6: Find Connected Memories (AI Brain) ─────────────────
+    let connectedMemories: { id: string; title: string; reason: string }[] = []
+    try {
+      connectedMemories = await findConnectedMemories(aiTags, rawContent, 'pending')
+    } catch {
+      // Non-critical — continue without connections
+    }
+
+    // ── STEP 7: Try Supabase first (cookie-aware route handler client) ──
     if (isSupabaseConfigured()) {
       try {
         const supabase = await getSupabaseRouteClient()
@@ -506,9 +691,6 @@ export async function POST(req: NextRequest) {
             // Collection Tag Matching
             await matchOrCreateCollections(supabase, user.id, (memoryRow as { id: string }).id, aiTags)
 
-            // 10-Note Auto-Sweep (non-blocking)
-            autoSweepCollections(supabase, user.id).catch(() => {})
-
             // Return memory object in the format the frontend expects
             const row = memoryRow as Record<string, unknown>
             const memoryCollections = (row.memory_collections as Array<{ collection_id: string; collections: { id: string; name: string; color: string; icon: string } }>) || []
@@ -535,6 +717,8 @@ export async function POST(req: NextRequest) {
                 color: mc.collections.color,
                 icon: mc.collections.icon,
               })),
+              connectedMemories,
+              connectedThemes,
             }
 
             return NextResponse.json({ success: true, memory })
@@ -549,7 +733,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── STEP 7: Prisma Fallback (always works) ─────────────────────
+    // ── STEP 8: Prisma Fallback (always works) ─────────────────────
     const memory = await saveToPrisma({
       type: memoryType,
       title: aiTitle,
@@ -559,9 +743,18 @@ export async function POST(req: NextRequest) {
       tags: aiTags,
       sourceUrl: hasUrl ? url.trim() : null,
       imageUrl: imageUrl,
+      imagePreview: null,
+      recap: null,
     })
 
-    return NextResponse.json({ success: true, memory })
+    // Add connection data to response
+    const memoryWithConnections = {
+      ...memory,
+      connectedMemories,
+      connectedThemes,
+    }
+
+    return NextResponse.json({ success: true, memory: memoryWithConnections })
   } catch (error) {
     console.error('Capture route error:', error)
     const message = error instanceof Error ? error.message : 'Internal server error'

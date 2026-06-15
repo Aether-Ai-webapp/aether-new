@@ -220,6 +220,14 @@ export default function AetherApp() {
   // ── Inspection Drawer State ──────────────────────────────────────
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerMemory, setDrawerMemory] = useState<Memory | null>(null)
+  const [drawerConnections, setDrawerConnections] = useState<{ id: string; title: string; type: string; reason: string; strength: number }[]>([])
+  const [drawerConnectionsLoading, setDrawerConnectionsLoading] = useState(false)
+  const [drawerThemes, setDrawerThemes] = useState<string[]>([])
+
+  // ── AI Brain State ───────────────────────────────────────────────
+  const [brainOpen, setBrainOpen] = useState(false)
+  const [brainClusters, setBrainClusters] = useState<{ name: string; theme: string; memoryIds: string[] }[]>([])
+  const [brainLoading, setBrainLoading] = useState(false)
 
   // ═════════════════════════════════════════════════════════════════
   // ─── EFFECTS ─────────────────────────────────────────────────────
@@ -273,7 +281,7 @@ export default function AetherApp() {
         if (data.memory) {
           store.addMemory(data.memory)
           setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-          toast.success('Image captured!')
+          toast.success('Image captured & AI analyzed!')
         }
 
         setCaptureText('')
@@ -286,7 +294,7 @@ export default function AetherApp() {
       const isUrl = /^https?:\/\//i.test(text)
       const memoryType: MemoryType = isUrl ? 'link' : 'text'
 
-      // Use the capture API for text too, so Gemini synthesis runs
+      // Use the capture API for text too, so AI synthesis runs
       const formData = new FormData()
       formData.append('text', text)
       if (isUrl) formData.append('url', text)
@@ -305,7 +313,7 @@ export default function AetherApp() {
       if (data.memory) {
         store.addMemory(data.memory)
         setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-        toast.success('Memory captured!')
+        toast.success(data.memory.summary || data.memory.tags?.length > 0 ? 'Captured with AI synthesis!' : 'Memory captured!')
       }
 
       setCaptureText('')
@@ -351,7 +359,7 @@ export default function AetherApp() {
           if (data.memory) {
             store.addMemory(data.memory)
             setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-            toast.success('Voice note captured!')
+            toast.success('Voice note captured & transcribed!')
           }
         } catch (err) {
           console.error('Voice capture error:', err)
@@ -484,14 +492,48 @@ export default function AetherApp() {
     toast.success('Signed out')
   }, [store])
 
-  const openDrawer = useCallback((memory: Memory) => {
+  const openDrawer = useCallback(async (memory: Memory) => {
     setDrawerMemory(memory)
     setDrawerOpen(true)
+    setDrawerConnections([])
+    setDrawerThemes([])
+    setDrawerConnectionsLoading(true)
+
+    // Fetch connected memories from AI Brain
+    try {
+      const res = await fetch(`/api/brain?memoryId=${memory.id}`, { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setDrawerConnections(data.relatedMemories || [])
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setDrawerConnectionsLoading(false)
+    }
   }, [])
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false)
     setDrawerMemory(null)
+    setDrawerConnections([])
+    setDrawerThemes([])
+  }, [])
+
+  const handleLoadBrain = useCallback(async () => {
+    setBrainLoading(true)
+    try {
+      const res = await fetch('/api/brain', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setBrainClusters(data.clusters || [])
+        setBrainOpen(true)
+      }
+    } catch {
+      toast.error('Failed to load AI Brain')
+    } finally {
+      setBrainLoading(false)
+    }
   }, [])
 
   // ═════════════════════════════════════════════════════════════════
@@ -796,6 +838,19 @@ export default function AetherApp() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleLoadBrain}
+              disabled={brainLoading}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+                brainOpen
+                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                  : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 border border-transparent"
+              )}
+            >
+              {brainLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">AI Brain</span>
+            </button>
+            <button
               onClick={() => setAskAIOpen(!askAIOpen)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
@@ -954,6 +1009,78 @@ export default function AetherApp() {
           )}
         </AnimatePresence>
 
+        {/* ═══ AI Brain Panel ═══ */}
+        <AnimatePresence>
+          {brainOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-8 overflow-hidden"
+            >
+              <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-amber-500" />
+                    <h3 className="text-sm font-semibold text-zinc-800">AI Brain — Memory Connections</h3>
+                  </div>
+                  <button onClick={() => setBrainOpen(false)} className="text-zinc-400 hover:text-zinc-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {brainClusters.length === 0 ? (
+                  <p className="text-xs text-zinc-400">No clusters detected yet. Capture more memories to reveal connections.</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {brainClusters.filter(cluster => {
+                      const clusterMemories = store.memories.filter(m => cluster.memoryIds.includes(m.id))
+                      return clusterMemories.length > 0
+                    }).length === 0 ? (
+                      <p className="text-xs text-zinc-400">Analyzing connections... Capture more memories to reveal deeper patterns.</p>
+                    ) : (
+                      brainClusters.filter(cluster => {
+                        const clusterMemories = store.memories.filter(m => cluster.memoryIds.includes(m.id))
+                        return clusterMemories.length > 0
+                      }).map((cluster, i) => {
+                        const clusterMemories = store.memories.filter(m => cluster.memoryIds.includes(m.id))
+                      return (
+                        <div key={i} className="bg-zinc-50/80 rounded-xl border border-zinc-100/60 p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center">
+                              <Zap className="w-3 h-3 text-amber-600" />
+                            </div>
+                            <h4 className="text-sm font-semibold text-zinc-800">{cluster.name}</h4>
+                            <span className="text-[10px] text-zinc-400">{clusterMemories.length} memories</span>
+                          </div>
+                          <p className="text-xs text-zinc-500 mb-3 leading-relaxed">{cluster.theme}</p>
+                          <div className="space-y-1.5">
+                            {clusterMemories.slice(0, 5).map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => { setBrainOpen(false); openDrawer(m) }}
+                                className="w-full flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-zinc-100 hover:border-purple-200 hover:bg-purple-50/30 transition-all text-left"
+                              >
+                                <div className={cn("shrink-0 w-5 h-5 rounded flex items-center justify-center", MemoryTypeBgClass(m.type))}>
+                                  <MemoryTypeIcon type={m.type} className="w-2.5 h-2.5" />
+                                </div>
+                                <span className="text-xs font-medium text-zinc-700 truncate">{m.title || 'Untitled'}</span>
+                                {m.tags.length > 0 && (
+                                  <span className="text-[10px] text-purple-500 ml-auto shrink-0">{m.tags[0]}</span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ═══ Filter Bar ═══ */}
         <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
           {(['all', 'text', 'voice', 'link', 'image'] as const).map(type => (
@@ -1030,12 +1157,16 @@ export default function AetherApp() {
                           {!memory.summary && memory.content && (
                             <p className="text-xs text-zinc-400 mt-0.5 line-clamp-2">{memory.content}</p>
                           )}
-                          <div className="flex items-center gap-2 mt-2">
-                            {memory.tags.slice(0, 3).map(tag => (
-                              <span key={tag} className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {memory.tags.slice(0, 4).map(tag => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium flex items-center gap-0.5">
+                                <Hash className="w-2 h-2" />
                                 {tag}
                               </span>
                             ))}
+                            {memory.tags.length > 4 && (
+                              <span className="text-[10px] text-zinc-300">+{memory.tags.length - 4}</span>
+                            )}
                             <span className="text-[10px] text-zinc-300 ml-auto flex items-center gap-1">
                               <Clock className="w-2.5 h-2.5" />
                               {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
@@ -1048,7 +1179,7 @@ export default function AetherApp() {
                   </motion.div>
 
                   {/* ═══ Saner-style AI Suggestion Box ═══ */}
-                  {isNew && (memory.summary || memory.tags.length > 0) && (
+                  {isNew && (memory.summary || memory.tags.length > 0 || memory.deepInsight) && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -1058,7 +1189,7 @@ export default function AetherApp() {
                       <div className="bg-zinc-50/80 rounded-xl border border-zinc-100/60 p-3">
                         <div className="flex items-center gap-1.5 mb-2">
                           <Sparkles className="w-3 h-3 text-purple-400" />
-                          <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">AI Suggestion</span>
+                          <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">AI Synthesis</span>
                         </div>
                         {memory.title && (
                           <div className="flex items-center gap-1.5 mb-1.5">
@@ -1066,14 +1197,23 @@ export default function AetherApp() {
                             <p className="text-xs font-medium text-zinc-600">{memory.title}</p>
                           </div>
                         )}
+                        {memory.summary && (
+                          <p className="text-[11px] text-zinc-500 leading-relaxed mb-2">{memory.summary}</p>
+                        )}
                         {memory.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mb-2">
                             {memory.tags.map(tag => (
-                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-white text-zinc-500 rounded border border-zinc-100 flex items-center gap-0.5">
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full flex items-center gap-0.5 font-medium">
                                 <Hash className="w-2 h-2" />
                                 {tag}
                               </span>
                             ))}
+                          </div>
+                        )}
+                        {memory.deepInsight && (
+                          <div className="flex items-start gap-1.5 mb-2">
+                            <Brain className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                            <p className="text-[11px] text-zinc-500 leading-relaxed">{memory.deepInsight.slice(0, 120)}...</p>
                           </div>
                         )}
                         <button
@@ -1204,7 +1344,7 @@ export default function AetherApp() {
                   )}
                 </div>
 
-                {/* Gemini Deep Professional Insight */}
+                {/* AI Deep Professional Insight */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Brain className="w-3.5 h-3.5 text-indigo-400" />
@@ -1250,6 +1390,46 @@ export default function AetherApp() {
                     </div>
                   </div>
                 )}
+
+                {/* ═══ AI Brain: Connected Memories ═══ */}
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Brain className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-xs font-semibold text-zinc-500">Connected Memories</span>
+                  </div>
+                  {drawerConnectionsLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Finding connections...
+                    </div>
+                  ) : drawerConnections.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {drawerConnections.map(conn => {
+                        const connMem = store.memories.find(m => m.id === conn.id)
+                        return (
+                          <button
+                            key={conn.id}
+                            onClick={() => { if (connMem) openDrawer(connMem) }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-amber-50/50 rounded-xl border border-amber-100/50 hover:border-amber-200 hover:bg-amber-50 transition-all text-left group"
+                          >
+                            <div className={cn("shrink-0 w-6 h-6 rounded-lg flex items-center justify-center", MemoryTypeBgClass(conn.type as MemoryType))}>
+                              <MemoryTypeIcon type={conn.type as MemoryType} className="w-3 h-3" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-zinc-700 truncate group-hover:text-amber-700 transition-colors">
+                                {conn.title}
+                              </p>
+                              <p className="text-[10px] text-zinc-400 truncate">{conn.reason}</p>
+                            </div>
+                            <ArrowRight className="w-3 h-3 text-zinc-200 group-hover:text-amber-400 transition-colors shrink-0" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-300 py-1">No connected memories found</p>
+                  )}
+                </div>
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-3 pt-4 border-t border-zinc-100">
