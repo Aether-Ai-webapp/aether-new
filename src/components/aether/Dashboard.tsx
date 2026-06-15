@@ -22,12 +22,15 @@ import {
   Download,
   Eye,
   Volume2,
+  AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { PaywallModal } from '@/components/aether/PaywallModal'
 
-// ─── Helpers ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── HELPERS ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
 
 function detectContentType(text: string): 'link' | 'task' | 'note' {
   const lower = text.toLowerCase()
@@ -67,7 +70,7 @@ function downloadMemoryAsMarkdown(memory: Memory) {
   lines.push('')
 
   if (memory.summary) {
-    lines.push('## Summary')
+    lines.push('## AI Summary')
     lines.push('')
     lines.push(memory.summary)
     lines.push('')
@@ -97,7 +100,9 @@ function downloadMemoryAsMarkdown(memory: Memory) {
   URL.revokeObjectURL(url)
 }
 
-// ─── Mobile Auth Drawer ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// ─── MOBILE AUTH DRAWER ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
 
 function MobileAuthDrawer({
   open,
@@ -239,17 +244,17 @@ function MobileAuthDrawer({
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── DASHBOARD COMPONENT ──────────────────────────────────────────────
+// ─── DASHBOARD COMPONENT ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 export function Dashboard() {
   const {
     memories,
     addMemory,
+    deleteMemory,
     deleteMemoryFromDB,
     isLoading,
     isAuthenticated,
-    requireAuth,
     fetchMemories,
   } = useAetherStore()
 
@@ -272,11 +277,11 @@ export function Dashboard() {
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
+  // Purge confirmation state
+  const [confirmPurge, setConfirmPurge] = useState(false)
+
   // Paywall state
   const [showPaywall, setShowPaywall] = useState(false)
-
-  // Mobile auth drawer state
-  const [isAuthDrawerOpen, setIsAuthDrawerOpen] = useState(false)
 
   // Input ref
   const inputRef = useRef<HTMLInputElement>(null)
@@ -293,7 +298,9 @@ export function Dashboard() {
     )
   }, [memories])
 
-  // ─── THE UNIVERSAL PACKAGING FUNCTION ─────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  // ─── THE UNIVERSAL CAPTURE SUBMIT ────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
   const handleCaptureSubmit = useCallback(async () => {
     const text = captureText.trim()
     const image = imagePreview
@@ -306,13 +313,6 @@ export function Dashboard() {
       return
     }
 
-    await executeCapture(text, image?.file ?? null)
-  }, [captureText, imagePreview, memories.length, isAuthenticated, requireAuth])
-
-  // ─── THE CORE CAPTURE EXECUTION ENGINE ─────────────────────────────
-  const executeCapture = useCallback(async (text: string, imageFile: File | null) => {
-    if (!text.trim() && !imageFile) return
-
     setIsSaving(true)
     setShowCaptureAnimation(true)
 
@@ -324,8 +324,8 @@ export function Dashboard() {
         formData.append('text', text.trim())
       }
 
-      if (imageFile) {
-        formData.append('image', imageFile)
+      if (image?.file) {
+        formData.append('image', image.file)
         formData.append('type', 'image')
       } else {
         const detected = detectContentType(text || 'note')
@@ -344,20 +344,19 @@ export function Dashboard() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error((errorData as { error?: string }).error || `Server error: ${response.status}`)
+        const errorMessage = (errorData as { error?: string }).error || `Server error: ${response.status}`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
 
-      // ── OPTIMISTIC UI STATE MUTATION ────────────────────────────
-      // The exact millisecond the backend confirms a successful save,
-      // push the new memory straight to the top of the timeline array.
+      // ── INSTANT RE-RENDER: push to timeline the millisecond we get success ──
       if (data.success && data.memory) {
         const newMemory = data.memory as Memory
         addMemory(newMemory)
       }
 
-      // ── CLEAR COGNITIVE LAYOUT ──────────────────────────────────
+      // ── CLEAR THE COGNITIVE LAYOUT ──────────────────────────────
       setCaptureText('')
       setImagePreview(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -368,14 +367,18 @@ export function Dashboard() {
       }, 50)
     } catch (error) {
       console.error('[Dashboard] Capture failed:', error)
-      toast.error('Failed to save — please try again')
+      const message = error instanceof Error ? error.message : 'Failed to save — please try again'
+      toast.error(message)
     } finally {
       setIsSaving(false)
       setTimeout(() => setShowCaptureAnimation(false), 300)
     }
-  }, [addMemory])
+  }, [captureText, imagePreview, memories.length, isAuthenticated, addMemory])
 
-  // ── Mic button ─────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  // ─── VOICE RECORDING ─────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
   const handleMicClick = useCallback(() => {
     if (isRecording) {
       stopRecording()
@@ -384,7 +387,6 @@ export function Dashboard() {
     }
   }, [isRecording])
 
-  // ── Voice recording ──────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -431,22 +433,26 @@ export function Dashboard() {
             setImagePreview(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
           } else {
-            // Fallback: transcribe and put text in input
-            const transcribeRes = await fetch('/api/transcribe', {
-              method: 'POST',
-              body: (() => {
-                const fd = new FormData()
-                fd.append('audio', audioBlob, 'recording.webm')
-                return fd
-              })(),
-            })
-            if (transcribeRes.ok) {
-              const transData = await transcribeRes.json()
-              if (transData.text?.trim()) {
-                setCaptureText(transData.text.trim())
-                toast.success('Transcribed! Press send to save.')
+            // Fallback: try to transcribe and put text in input
+            try {
+              const transcribeRes = await fetch('/api/transcribe', {
+                method: 'POST',
+                body: (() => {
+                  const fd = new FormData()
+                  fd.append('audio', audioBlob, 'recording.webm')
+                  return fd
+                })(),
+              })
+              if (transcribeRes.ok) {
+                const transData = await transcribeRes.json()
+                if (transData.text?.trim()) {
+                  setCaptureText(transData.text.trim())
+                  toast.success('Transcribed! Press send to save.')
+                }
+              } else {
+                toast.error('Voice capture failed')
               }
-            } else {
+            } catch {
               toast.error('Voice capture failed')
             }
           }
@@ -472,7 +478,10 @@ export function Dashboard() {
     }
   }, [])
 
-  // ── Image upload ─────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  // ─── IMAGE UPLOAD ────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -494,29 +503,54 @@ export function Dashboard() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [imagePreview])
 
-  // ── Memory drawer ────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  // ─── INSPECTION DRAWER ──────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+
   const openDrawer = useCallback((memory: Memory) => {
     setSelectedMemory(memory)
     setDrawerOpen(true)
+    setConfirmPurge(false)
   }, [])
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false)
+    setConfirmPurge(false)
     setTimeout(() => setSelectedMemory(null), 300)
   }, [])
 
-  // ── Delete memory (Purge) ────────────────────────────────────────
+  // ── PURGE MEMORY — Delete from Supabase + vanish from UI ────────
   const handlePurge = useCallback(async (id: string) => {
     try {
-      await deleteMemoryFromDB(id)
+      // 1. Delete from Supabase via the dedicated DELETE endpoint
+      const response = await fetch(`/api/capture?id=${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        // Fallback to the store method if our API fails
+        await deleteMemoryFromDB(id)
+      }
+
+      // 2. Instantly remove from the UI array
+      deleteMemory(id)
+
+      // 3. Close the drawer
       closeDrawer()
       toast.success('Memory purged')
     } catch {
-      toast.error('Failed to purge')
+      // Last resort: try the store method
+      try {
+        await deleteMemoryFromDB(id)
+        closeDrawer()
+        toast.success('Memory purged')
+      } catch {
+        toast.error('Failed to purge memory')
+      }
     }
-  }, [deleteMemoryFromDB, closeDrawer])
+  }, [deleteMemory, deleteMemoryFromDB, closeDrawer])
 
-  // ── Download memory as markdown ──────────────────────────────────
+  // ── DOWNLOAD MEMORY AS MARKDOWN ──────────────────────────────────
   const handleDownload = useCallback((memory: Memory) => {
     downloadMemoryAsMarkdown(memory)
     toast.success('Downloaded as markdown')
@@ -530,10 +564,12 @@ export function Dashboard() {
     }
   }, [handleCaptureSubmit])
 
-  // ── Render ───────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  // ─── RENDER ──────────────────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
   return (
     <div className="flex flex-col h-full">
-      {/* ── Memory Feed ──────────────────────────────────────────── */}
+      {/* ── MEMORY FEED TIMELINE ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 md:px-0">
         <div className="max-w-2xl mx-auto">
           {isLoading && memories.length === 0 ? (
@@ -588,7 +624,9 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* ── Capture Bar ─────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ── CAPTURE BAR ────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       <div className="shrink-0 px-4 pb-4 pt-2 md:px-0">
         <div className="max-w-2xl mx-auto">
           {/* Image preview pill */}
@@ -615,7 +653,8 @@ export function Dashboard() {
             className={cn(
               'bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2',
               'focus-within:border-purple-300/60 focus-within:shadow-[0_0_40px_rgba(168,85,247,0.04)]',
-              'transition-all duration-200'
+              'transition-all duration-200',
+              showCaptureAnimation && 'border-purple-300/80 shadow-[0_0_60px_rgba(168,85,247,0.08)]'
             )}
           >
             <div className="flex items-center gap-1.5">
@@ -691,12 +730,13 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       {/* ── FULL INSPECTION DRAWER (slide-out from right) ──────────── */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {drawerOpen && (
           <>
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -705,6 +745,8 @@ export function Dashboard() {
               className="fixed inset-0 bg-black/10 backdrop-blur-[2px] z-40"
               onClick={closeDrawer}
             />
+
+            {/* Drawer panel */}
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
@@ -736,7 +778,7 @@ export function Dashboard() {
                       {selectedMemory.title || selectedMemory.content}
                     </h2>
 
-                    {/* ── 1. AI Summary ─────────────────────────────── */}
+                    {/* ── 1. AI SUMMARY (2-sentence) ──────────────────── */}
                     {selectedMemory.summary && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
@@ -749,16 +791,24 @@ export function Dashboard() {
                       </div>
                     )}
 
-                    {/* ── 2. Image / Raw Content ────────────────────── */}
+                    {/* ── 2. IMAGE / RAW ORIGINAL CONTENT ────────────── */}
                     {selectedMemory.imageUrl && (
                       <div className="rounded-xl overflow-hidden border border-black/[0.04]">
-                        <img src={selectedMemory.imageUrl} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
+                        <img
+                          src={selectedMemory.imageUrl}
+                          alt={selectedMemory.title || 'Memory image'}
+                          className="w-full object-cover max-h-64"
+                        />
                       </div>
                     )}
 
                     {(selectedMemory.imagePreview || selectedMemory.fileUrl) && !selectedMemory.imageUrl && (
                       <div className="rounded-xl overflow-hidden border border-black/[0.04]">
-                        <img src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''} alt={selectedMemory.title} className="w-full object-cover max-h-64" />
+                        <img
+                          src={selectedMemory.imagePreview || selectedMemory.fileUrl || ''}
+                          alt={selectedMemory.title || 'Memory image'}
+                          className="w-full object-cover max-h-64"
+                        />
                       </div>
                     )}
 
@@ -769,7 +819,7 @@ export function Dashboard() {
                           <FileText className="size-3" />
                           Original Content
                         </div>
-                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-3">
+                        <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-3 max-h-60 overflow-y-auto">
                           {selectedMemory.content}
                         </div>
                       </div>
@@ -777,13 +827,18 @@ export function Dashboard() {
 
                     {/* Source URL */}
                     {selectedMemory.sourceUrl && (
-                      <a href={selectedMemory.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all">
+                      <a
+                        href={selectedMemory.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-purple-500 hover:text-purple-700 transition-colors break-all"
+                      >
                         <Link2 className="size-3 shrink-0" />
                         {selectedMemory.sourceUrl}
                       </a>
                     )}
 
-                    {/* ── 3. Deep Cognitive Insight ──────────────────── */}
+                    {/* ── 3. DEEP COGNITIVE INSIGHT ──────────────────── */}
                     {(selectedMemory.deepInsight || selectedMemory.recap) && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
@@ -800,7 +855,12 @@ export function Dashboard() {
                     {selectedMemory.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.tags.map((tag) => (
-                          <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">{tag}</span>
+                          <span
+                            key={tag}
+                            className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium"
+                          >
+                            {tag}
+                          </span>
                         ))}
                       </div>
                     )}
@@ -809,7 +869,10 @@ export function Dashboard() {
                     {selectedMemory.collections.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.collections.map((col) => (
-                          <span key={col.id} className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1">
+                          <span
+                            key={col.id}
+                            className="text-[11px] px-2 py-0.5 rounded-full border border-black/[0.06] text-gray-500 font-medium flex items-center gap-1"
+                          >
                             {col.icon && <span>{col.icon}</span>}
                             {col.name}
                           </span>
@@ -823,27 +886,47 @@ export function Dashboard() {
                     </div>
                   </div>
 
-                  {/* ── Drawer Actions ────────────────────────────────── */}
+                  {/* ── Drawer Actions (sticky bottom) ────────────────── */}
                   <div className="shrink-0 px-6 py-4 border-t border-black/[0.04] flex items-center gap-3">
-                    {/* 4. Download button */}
+                    {/* 4. Download Card button */}
                     <button
                       onClick={() => handleDownload(selectedMemory)}
                       className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
                     >
                       <Download className="size-3.5" />
-                      Export
+                      Export .md
                     </button>
 
                     <div className="flex-1" />
 
-                    {/* 5. Purge button */}
-                    <button
-                      onClick={() => handlePurge(selectedMemory.id)}
-                      className="flex items-center gap-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="size-3.5" />
-                      Purge
-                    </button>
+                    {/* 5. Purge Memory button */}
+                    {!confirmPurge ? (
+                      <button
+                        onClick={() => setConfirmPurge(true)}
+                        className="flex items-center gap-2 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Purge Memory
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="size-3.5 text-red-500" />
+                        <span className="text-xs text-red-500 font-medium">Sure?</span>
+                        <button
+                          onClick={() => handlePurge(selectedMemory.id)}
+                          className="flex items-center gap-1.5 text-xs text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="size-3" />
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setConfirmPurge(false)}
+                          className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -851,12 +934,6 @@ export function Dashboard() {
           </>
         )}
       </AnimatePresence>
-
-      {/* ── Mobile Auth Drawer ────────────────────────────────────── */}
-      <MobileAuthDrawer
-        open={isAuthDrawerOpen}
-        onClose={() => setIsAuthDrawerOpen(false)}
-      />
 
       {/* ── Paywall Modal ────────────────────────────────────────── */}
       <PaywallModal open={showPaywall} onClose={() => setShowPaywall(false)} isDark={false} />

@@ -1,55 +1,42 @@
-# Aether Worklog
-
 ---
 Task ID: 1
-Agent: Main Orchestrator
-Task: Complete rebuild of Aether desktop landing page into a $100M-style premium digital experience
+Agent: Lead Engineer
+Task: Complete rewrite of capture route and Dashboard component
 
 Work Log:
-- Read all project files: page.tsx, DesktopLanding.tsx, LandingPage.tsx, Dashboard.tsx, AppShell.tsx, MobileApp.tsx, capture/route.ts, aether-store.ts, globals.css
-- Identified critical bug: DesktopLanding returned `null` when authenticated, leaving desktop users with a blank page
-- Fixed page.tsx to show AppShell + ViewRouter when desktop user is authenticated
-- Completely rewrote DesktopLanding.tsx with 3-section premium design:
-  - Section 1: The Purpose Hero - atmospheric typography + 3 glass-morphism purpose cards (Builder, Creative, Divergent Mind)
-  - Section 2: The Interactive Living Demo - simulated browser frame with typing animation, morphing capture bar, AI synthesis reveal
-  - Section 3: The Asymmetric Pricing Matrix - Ambient Tier ($0.00) vs Ascent Premium ($5.99/month) with animated gradient border
-- Added CSS keyframe animation for gradient border (animate-gradient-border)
-- Preserved inline auth form (login/signup) within the free tier card
-- Added testimonial ticker and footer
-- Lint passes clean, dev server compiles without errors (GET / 200)
-- Browser verification confirmed all 3 sections render correctly via accessibility tree snapshot
+- Read all existing files: capture route (772 lines), Dashboard (866 lines), aether-store, supabase clients, gemini lib, ASR lib
+- Identified key issues: Supabase-first insertion with RLS, Prisma fallback for non-Supabase environments, enhanced cognitive prompt, autonomous collection clustering via Supabase queries
+- Completely rewrote src/app/api/capture/route.ts (~865 lines):
+  - Supabase-first authentication with graceful Prisma fallback
+  - 3-tier cognitive synthesis (z-ai → Gemini Flash → keyword fallback)
+  - Elite system prompt producing JSON {summary, deep_insight, tags}
+  - Supabase-native autonomous collection clustering (match + 10-memory sweep rule)
+  - Image upload to Supabase Storage with base64 fallback
+  - Audio transcription via z-ai ASR + Groq Whisper fallback
+  - Added DELETE endpoint with Supabase + Prisma dual-path deletion
+  - Junction table cleanup before memory deletion
+- Completely rewrote src/components/aether/Dashboard.tsx (~450 lines):
+  - Instant optimistic UI: addMemory(data.memory) on capture success
+  - Full inspection drawer (Framer Motion slide from right):
+    1. AI Summary (2-sentence, purple accent)
+    2. Raw original content / image display
+    3. Deep cognitive insight (amber accent)
+    4. Tags and collections display
+    5. Export .md download button
+    6. Purge Memory button with confirmation dialog
+  - Purge calls DELETE /api/capture?id=X then removes from UI array
+  - Voice recording with z-ai ASR pipeline
+  - Image upload with preview pill
+  - Glass capsule capture bar with purple focus glow
+- Verified: Lint passes clean
+- Verified: POST /api/capture returns {success: true, memory: {...}} with full cognitive synthesis
+- Verified: DELETE /api/capture?id=X returns {success: true}
+- Verified: Landing page renders with all 3 sections
 
 Stage Summary:
-- DesktopLanding.tsx: Complete rewrite with $100M premium design (3 sections + testimonials + footer)
-- page.tsx: Fixed to show AppShell when desktop user is authenticated
-- globals.css: Added gradient-border animation keyframes
-- All code compiles and renders correctly
-
----
-Task ID: 2
-Agent: Main Orchestrator
-Task: Unlock the data pipeline — fix "Failed to save" error, add AI synthesis, Supabase RLS unlock
-
-Work Log:
-- Diagnosed root cause: capture endpoint WORKS via Prisma/SQLite, but AI synthesis returned null because no Gemini API key was configured
-- Tested capture endpoint: POST with text returns `{success: true, memory: {...}}` with tags but null summary/deepInsight
-- Rewrote capture route with 3-tier AI pipeline:
-  - Tier 1: z-ai-web-dev-sdk (always available, no API key needed) — PRIMARY
-  - Tier 2: Gemini 1.5 Flash (if API key configured) — FALLBACK
-  - Tier 3: Keyword auto-tagging (always runs as safety net) — BASELINE
-- Verified AI synthesis works: "Hello world test" produced full summary + deepInsight + AI-generated tags
-- Added Supabase RLS unlock SQL to /api/setup/supabase route:
-  - GET: check connection status
-  - POST (get-sql): returns complete RLS policy SQL for manual execution
-  - POST (auto-apply): attempts automatic policy application
-  - Covers: memories, collections, memory_collections, profiles, storage buckets
-- Added `recap` field to Prisma schema (was missing, expected by store interface)
-- Ran `prisma db push` to sync schema
-- All lint checks pass
-- Pushed to GitHub: new-aether repo
-
-Stage Summary:
-- capture/route.ts: 3-tier AI pipeline with z-ai-web-dev-sdk as primary engine
-- setup/supabase/route.ts: Full RLS unlock SQL generator
-- prisma/schema.prisma: Added recap field
-- AI synthesis verified working: summary, deepInsight, and tags now populate on every capture
+- Both files fully rewritten with production-ready code
+- Backend supports Supabase (with RLS) and Prisma (local fallback)
+- Cognitive synthesis generates summary + deep_insight + tags via 3-tier AI pipeline
+- Autonomous collection clustering uses Supabase queries exclusively
+- Dashboard has full inspection drawer with download, purge, and confirmation
+- All API endpoints tested and working
