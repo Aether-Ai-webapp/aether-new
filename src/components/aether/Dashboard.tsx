@@ -23,6 +23,7 @@ import {
   Eye,
   Volume2,
   AlertTriangle,
+  Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -51,7 +52,6 @@ const typeIconMap: Record<string, React.ElementType> = {
   image: ImageIcon,
 }
 
-// ─── Download helper: export memory as clean markdown ───────────────
 function downloadMemoryAsMarkdown(memory: Memory) {
   const lines: string[] = []
   lines.push(`# ${memory.title || 'Untitled Memory'}`)
@@ -112,6 +112,8 @@ export function Dashboard() {
     isLoading,
     isAuthenticated,
     fetchMemories,
+    requireAuth,
+    setShowAuthModal,
   } = useAetherStore()
 
   // ── Local State ──────────────────────────────────────────────────
@@ -146,15 +148,30 @@ export function Dashboard() {
 
   // ── Sorted memories ──────────────────────────────────────────────
   const sortedMemories = useMemo(() => {
+    if (!Array.isArray(memories)) return []
     return [...memories].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
   }, [memories])
 
   // ═════════════════════════════════════════════════════════════════
+  // ─── AUTH GATE FOR CAPTURE ────────────────────────────────────────
+  // ═════════════════════════════════════════════════════════════════
+  const gateCapture = useCallback((): boolean => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true)
+      toast.error('Sign in to capture memories')
+      return false
+    }
+    return true
+  }, [isAuthenticated, setShowAuthModal])
+
+  // ═════════════════════════════════════════════════════════════════
   // ─── THE UNIVERSAL CAPTURE SUBMIT ────────────────────────────────
   // ═════════════════════════════════════════════════════════════════
   const handleCaptureSubmit = useCallback(async () => {
+    if (!gateCapture()) return
+
     const text = captureText.trim()
     const image = imagePreview
 
@@ -164,7 +181,6 @@ export function Dashboard() {
     setShowCaptureAnimation(true)
 
     try {
-      // ── Package the universal FormData ──────────────────────────
       const formData = new FormData()
 
       if (text.trim()) {
@@ -183,7 +199,6 @@ export function Dashboard() {
         }
       }
 
-      // ── Send to the bulletproof capture endpoint ────────────────
       const response = await fetch('/api/capture', {
         method: 'POST',
         body: formData,
@@ -197,18 +212,15 @@ export function Dashboard() {
 
       const data = await response.json()
 
-      // ── INSTANT RE-RENDER: push to timeline the millisecond we get success ──
       if (data.success && data.memory) {
         const newMemory = data.memory as Memory
         addMemory(newMemory)
       }
 
-      // ── CLEAR THE COGNITIVE LAYOUT ──────────────────────────────
       setCaptureText('')
       setImagePreview(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
 
-      // Refocus the input for rapid capture
       setTimeout(() => {
         inputRef.current?.focus()
       }, 50)
@@ -222,19 +234,20 @@ export function Dashboard() {
       setIsSaving(false)
       setTimeout(() => setShowCaptureAnimation(false), 300)
     }
-  }, [captureText, imagePreview, addMemory])
+  }, [captureText, imagePreview, addMemory, gateCapture])
 
   // ═════════════════════════════════════════════════════════════════
   // ─── VOICE RECORDING ─────────────────────────────────────────────
   // ═════════════════════════════════════════════════════════════════
 
   const handleMicClick = useCallback(() => {
+    if (!gateCapture()) return
     if (isRecording) {
       stopRecording()
     } else {
       startRecording()
     }
-  }, [isRecording])
+  }, [isRecording, gateCapture])
 
   const startRecording = useCallback(async () => {
     try {
@@ -258,7 +271,6 @@ export function Dashboard() {
         setIsTranscribing(true)
 
         try {
-          // Send audio directly to /api/capture for full pipeline processing
           const formData = new FormData()
           formData.append('audio', audioBlob, 'recording.webm')
           formData.append('type', 'voice')
@@ -283,28 +295,7 @@ export function Dashboard() {
             if (fileInputRef.current) fileInputRef.current.value = ''
             toast.success('Voice memory captured')
           } else {
-            // Fallback: try to transcribe and put text in input
-            try {
-              const transcribeRes = await fetch('/api/transcribe', {
-                method: 'POST',
-                body: (() => {
-                  const fd = new FormData()
-                  fd.append('audio', audioBlob, 'recording.webm')
-                  return fd
-                })(),
-              })
-              if (transcribeRes.ok) {
-                const transData = await transcribeRes.json()
-                if (transData.text?.trim()) {
-                  setCaptureText(transData.text.trim())
-                  toast.success('Transcribed! Press send to save.')
-                }
-              } else {
-                toast.error('Voice capture failed')
-              }
-            } catch {
-              toast.error('Voice capture failed')
-            }
+            toast.error('Voice capture failed')
           }
         } catch {
           toast.error('Voice capture failed')
@@ -333,6 +324,7 @@ export function Dashboard() {
   // ═════════════════════════════════════════════════════════════════
 
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!gateCapture()) return
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
@@ -345,7 +337,7 @@ export function Dashboard() {
     }
     const url = URL.createObjectURL(file)
     setImagePreview({ file, url, name: file.name })
-  }, [])
+  }, [gateCapture])
 
   const removeImage = useCallback(() => {
     if (imagePreview) URL.revokeObjectURL(imagePreview.url)
@@ -369,27 +361,21 @@ export function Dashboard() {
     setTimeout(() => setSelectedMemory(null), 300)
   }, [])
 
-  // ── PURGE MEMORY — Delete from Supabase + vanish from UI ────────
+  // ── PURGE MEMORY ──────────────────────────────────────────────
   const handlePurge = useCallback(async (id: string) => {
     try {
-      // 1. Delete from Supabase via the dedicated DELETE endpoint
       const response = await fetch(`/api/capture?id=${id}`, {
         method: 'DELETE',
       })
 
       if (!response.ok) {
-        // Fallback to the store method if our API fails
         await deleteMemoryFromDB(id)
       }
 
-      // 2. Instantly remove from the UI array
       deleteMemory(id)
-
-      // 3. Close the drawer
       closeDrawer()
       toast.success('Memory purged')
     } catch {
-      // Last resort: try the store method
       try {
         await deleteMemoryFromDB(id)
         deleteMemory(id)
@@ -464,6 +450,7 @@ export function Dashboard() {
               'bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2',
               'focus-within:border-purple-300/60 focus-within:shadow-[0_0_40px_rgba(168,85,247,0.04)]',
               'transition-all duration-200',
+              !isAuthenticated && 'opacity-80',
               showCaptureAnimation && 'border-purple-300/80 shadow-[0_0_60px_rgba(168,85,247,0.08)]'
             )}
           >
@@ -497,14 +484,17 @@ export function Dashboard() {
                 value={captureText}
                 onChange={(e) => setCaptureText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Capture a thought..."
+                placeholder={isAuthenticated ? 'Capture a thought...' : 'Sign in to capture memories...'}
                 disabled={isSaving}
                 className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 outline-none min-w-0 py-1.5 px-1"
               />
 
               {/* Image upload button */}
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (!gateCapture()) return
+                  fileInputRef.current?.click()
+                }}
                 disabled={isSaving}
                 className="size-9 rounded-xl flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-all shrink-0"
               >
@@ -537,21 +527,43 @@ export function Dashboard() {
               </button>
             </div>
           </div>
+
+          {/* Auth prompt for unauthenticated users */}
+          {!isAuthenticated && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+              className="flex items-center justify-center gap-2 mt-3"
+            >
+              <Lock className="size-3 text-gray-300" />
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="text-xs text-purple-500 hover:text-purple-700 font-medium transition-colors"
+              >
+                Sign in to start capturing
+              </button>
+            </motion.div>
+          )}
         </div>
       </div>
 
       {/* ── MEMORY FEED TIMELINE ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-4 md:px-0">
         <div className="max-w-2xl mx-auto">
-          {isLoading && memories.length === 0 ? (
+          {isLoading && (!memories || memories.length === 0) ? (
             <div className="flex items-center justify-center py-24">
               <Loader2 className="size-6 animate-spin text-gray-300" />
             </div>
-          ) : sortedMemories.length === 0 ? (
+          ) : !sortedMemories || sortedMemories.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24">
               <Brain className="size-10 text-gray-200 mb-3" />
               <p className="text-sm text-gray-400 text-center">Your memories will appear here</p>
-              <p className="text-xs text-gray-300 mt-1">Use the capture bar above to save your first thought</p>
+              <p className="text-xs text-gray-300 mt-1">
+                {isAuthenticated
+                  ? 'Use the capture bar above to save your first thought'
+                  : 'Sign in to start capturing your thoughts'}
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-black/[0.03]">
@@ -582,6 +594,15 @@ export function Dashboard() {
                           <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">
                             {memory.summary}
                           </p>
+                        )}
+                        {memory.tags && memory.tags.length > 0 && (
+                          <div className="flex gap-1 mt-1">
+                            {memory.tags.slice(0, 3).map((tag) => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-400">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                       <span className="shrink-0 text-[11px] text-gray-300 tabular-nums">
@@ -645,7 +666,7 @@ export function Dashboard() {
                       {selectedMemory.title || selectedMemory.content}
                     </h2>
 
-                    {/* ── 1. AI-GENERATED 2-SENTENCE SUMMARY ────────── */}
+                    {/* ── 1. AI-GENERATED SUMMARY ────────── */}
                     {selectedMemory.summary && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1.5 text-xs text-purple-500 font-medium">
@@ -719,7 +740,7 @@ export function Dashboard() {
                     )}
 
                     {/* ── Tags ─────────────────────────────────────── */}
-                    {selectedMemory.tags.length > 0 && (
+                    {selectedMemory.tags && selectedMemory.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.tags.map((tag) => (
                           <span
@@ -733,7 +754,7 @@ export function Dashboard() {
                     )}
 
                     {/* ── Collections ──────────────────────────────── */}
-                    {selectedMemory.collections.length > 0 && (
+                    {selectedMemory.collections && selectedMemory.collections.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedMemory.collections.map((col) => (
                           <span
@@ -755,7 +776,7 @@ export function Dashboard() {
 
                   {/* ── Drawer Actions (sticky bottom) ────────────────── */}
                   <div className="shrink-0 px-6 py-4 border-t border-black/[0.04] flex items-center gap-3">
-                    {/* 4. Download Markdown button */}
+                    {/* Download Markdown button */}
                     <button
                       onClick={() => handleDownload(selectedMemory)}
                       className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 px-3 py-2 rounded-lg transition-colors"
@@ -766,7 +787,7 @@ export function Dashboard() {
 
                     <div className="flex-1" />
 
-                    {/* 5. Purge Memory button */}
+                    {/* Purge Memory button */}
                     {!confirmPurge ? (
                       <button
                         onClick={() => setConfirmPurge(true)}

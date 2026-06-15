@@ -1,0 +1,621 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React, { useState, useEffect, useRef, useCallback } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import {
+     6→     6→  Sparkles,
+     7→     7→  Brain,
+     8→     8→  Mic,
+     9→     9→  Send,
+    10→    10→  Image as ImageIcon,
+    11→    11→  Loader2,
+    12→    12→  X,
+    13→    13→  ArrowRight,
+    14→    14→  Check,
+    15→    15→  Zap,
+    16→    16→  Volume2,
+    17→    17→  Layers,
+    18→    18→} from 'lucide-react'
+    19→    19→import { useAetherStore } from '@/lib/aether-store'
+    20→    20→import { cn } from '@/lib/utils'
+    21→    21→import { toast } from 'sonner'
+    22→    22→
+    23→    23→// ═══════════════════════════════════════════════════════════════════════
+    24→    24→// ─── ANIMATION VARIANTS ──────────────────────────────────────────────
+    25→    25→// ═══════════════════════════════════════════════════════════════════════
+    26→    26→
+    27→    27→const staggerContainer = {
+    28→    28→  hidden: {},
+    29→    29→  visible: {
+    30→    30→    transition: { staggerChildren: 0.12, delayChildren: 0.2 },
+    31→    31→  },
+    32→    32→}
+    33→    33→
+    34→    34→const staggerChild = {
+    35→    35→  hidden: { opacity: 0, y: 16 },
+    36→    36→  visible: {
+    37→    37→    opacity: 1,
+    38→    38→    y: 0,
+    39→    39→    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+    40→    40→  },
+    41→    41→}
+    42→    42→
+    43→    43→const scaleIn = {
+    44→    44→  hidden: { opacity: 0, scale: 0.96 },
+    45→    45→  visible: {
+    46→    46→    opacity: 1,
+    47→    47→    scale: 1,
+    48→    48→    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
+    49→    49→  },
+    50→    50→}
+    51→    51→
+    52→    52→// ═══════════════════════════════════════════════════════════════════════
+    53→    53→// ─── TYPING ANIMATION DATA ───────────────────────────────────────────
+    54→    54→// ═══════════════════════════════════════════════════════════════════════
+    55→    55→
+    56→    56→const DEMO_THOUGHTS = [
+    57→    57→  'The best products are the ones that disappear into your workflow...',
+    58→    58→  'What if memory was as fluid as thought itself?',
+    59→    59→  'Every great idea starts as a fragment before it becomes a system...',
+    60→    60→]
+    61→    61→
+    62→    62→const DEMO_SUMMARIES = [
+    63→    63→  'Products that seamlessly integrate into existing habits become invisible infrastructure. The highest compliment for a tool is when users forget it is there.',
+    64→    64→  'Memory systems should mirror the associative, non-linear nature of human cognition rather than forcing rigid hierarchies. Fluidity enables recall.',
+    65→    65→  'Innovation follows a consistent arc: scattered observations crystallize into coherent frameworks. The fragment is the seed of every breakthrough.',
+    66→    66→]
+    67→    67→
+    68→    68→// ═══════════════════════════════════════════════════════════════════════
+    69→    69→// ─── INTERACTIVE DEMO COMPONENT ──────────────────────────────────────
+    70→    70→// ═══════════════════════════════════════════════════════════════════════
+    71→    71→
+    72→    72→function InteractiveDemo() {
+    73→    73→  const [phase, setPhase] = useState<'typing' | 'morphing' | 'result'>('typing')
+    74→    74→  const [displayText, setDisplayText] = useState('')
+    75→    75→  const [currentThoughtIdx, setCurrentThoughtIdx] = useState(0)
+    76→    76→  const [showSummary, setShowSummary] = useState(false)
+    77→    77→  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    78→    78→
+    79→    79→  const currentThought = DEMO_THOUGHTS[currentThoughtIdx]
+    80→    80→  const currentSummary = DEMO_SUMMARIES[currentThoughtIdx]
+    81→    81→
+    82→    82→  const runCycle = useCallback(() => {
+    83→    83→    setPhase('typing')
+    84→    84→    setDisplayText('')
+    85→    85→    setShowSummary(false)
+    86→    86→
+    87→    87→    let charIndex = 0
+    88→    88→    const typeInterval = setInterval(() => {
+    89→    89→      if (charIndex < currentThought.length) {
+    90→    90→        setDisplayText(currentThought.slice(0, charIndex + 1))
+    91→    91→        charIndex++
+    92→    92→      } else {
+    93→    93→        clearInterval(typeInterval)
+    94→    94→        timerRef.current = setTimeout(() => {
+    95→    95→          setPhase('morphing')
+    96→    96→          timerRef.current = setTimeout(() => {
+    97→    97→            setPhase('result')
+    98→    98→            setShowSummary(true)
+    99→    99→            timerRef.current = setTimeout(() => {
+   100→   100→              setCurrentThoughtIdx((prev) => (prev + 1) % DEMO_THOUGHTS.length)
+   101→   101→            }, 4000)
+   102→   102→          }, 800)
+   103→   103→        }, 1200)
+   104→   104→      }
+   105→   105→    }, 45)
+   106→   106→
+   107→   107→    return () => {
+   108→   108→      clearInterval(typeInterval)
+   109→   109→      if (timerRef.current) clearTimeout(timerRef.current)
+   110→   110→    }
+   111→   111→  }, [currentThought])
+   112→   112→
+   113→   113→  useEffect(() => {
+   114→   114→    const cleanup = runCycle()
+   115→   115→    return cleanup
+   116→   116→  }, [currentThoughtIdx])
+   117→   117→
+   118→   118→  useEffect(() => {
+   119→   119→    return () => {
+   120→   120→      if (timerRef.current) clearTimeout(timerRef.current)
+   121→   121→    }
+   122→   122→  }, [])
+   123→   123→
+   124→   124→  return (
+   125→   125→    <div className="w-full max-w-xl mx-auto">
+   126→   126→      <motion.div
+   127→   127→        variants={scaleIn}
+   128→   128→        initial="hidden"
+   129→   129→        whileInView="visible"
+   130→   130→        viewport={{ once: true, margin: '-60px' }}
+   131→   131→        className="relative bg-white rounded-2xl border border-black/[0.06] shadow-[0_8px_40px_rgba(0,0,0,0.06)] overflow-hidden"
+   132→   132→      >
+   133→   133→        {/* Window chrome */}
+   134→   134→        <div className="flex items-center gap-2 px-4 py-3 border-b border-black/[0.04]">
+   135→   135→          <div className="flex gap-1.5">
+   136→   136→            <div className="size-2.5 rounded-full bg-red-400/70" />
+   137→   137→            <div className="size-2.5 rounded-full bg-yellow-400/70" />
+   138→   138→            <div className="size-2.5 rounded-full bg-green-400/70" />
+   139→   139→          </div>
+   140→   140→          <div className="flex-1 text-center">
+   141→   141→            <span className="text-[11px] text-gray-300 font-medium tracking-wide">AETHER</span>
+   142→   142→          </div>
+   143→   143→          <div className="w-[54px]" />
+   144→   144→        </div>
+   145→   145→
+   146→   146→        {/* Content area */}
+   147→   147→        <div className="p-5 min-h-[220px] flex flex-col">
+   148→   148→          {/* The typing input bar */}
+   149→   149→          <div className="bg-white/80 border border-black/[0.04] shadow-sm backdrop-blur-xl rounded-2xl p-2 mb-4">
+   150→   150→            <div className="flex items-center gap-2">
+   151→   151→              <div className="size-8 rounded-xl flex items-center justify-center text-gray-300">
+   152→   152→                <Mic className="size-4" />
+   153→   153→              </div>
+   154→   154→              <div className="flex-1 text-sm text-gray-800 min-h-[28px] flex items-center">
+   155→   155→                {displayText}
+   156→   156→                {phase === 'typing' && (
+   157→   157→                  <motion.span
+   158→   158→                    animate={{ opacity: [1, 0] }}
+   159→   159→                    transition={{ duration: 0.6, repeat: Infinity }}
+   160→   160→                    className="inline-block w-[2px] h-4 bg-purple-500 ml-0.5"
+   161→   161→                  />
+   162→   162→                )}
+   163→   163→              </div>
+   164→   164→              <div className={cn(
+   165→   165→                'size-8 rounded-xl flex items-center justify-center transition-all',
+   166→   166→                displayText ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
+   167→   167→              )}>
+   168→   168→                <Send className="size-3.5" />
+   169→   169→              </div>
+   170→   170→            </div>
+   171→   171→          </div>
+   172→   172→
+   173→   173→          {/* Morphing into a card */}
+   174→   174→          <AnimatePresence mode="wait">
+   175→   175→            {phase === 'result' && showSummary && (
+   176→   176→              <motion.div
+   177→   177→                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+   178→   178→                animate={{ opacity: 1, y: 0, scale: 1 }}
+   179→   179→                exit={{ opacity: 0, y: -8 }}
+   180→   180→                transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
+   181→   181→                className="bg-gray-50/80 border border-black/[0.03] rounded-xl p-4"
+   182→   182→              >
+   183→   183→                <div className="flex items-center gap-1.5 mb-2">
+   184→   184→                  <Sparkles className="size-3 text-purple-500" />
+   185→   185→                  <span className="text-[11px] font-medium text-purple-500 tracking-wide">AI SUMMARY</span>
+   186→   186→                </div>
+   187→   187→                <p className="text-sm text-gray-600 leading-relaxed">
+   188→   188→                  {currentSummary}
+   189→   189→                </p>
+   190→   190→              </motion.div>
+   191→   191→            )}
+   192→   192→          </AnimatePresence>
+   193→   193→
+   194→   194→          {phase !== 'result' && (
+   195→   195→            <div className="flex-1" />
+   196→   196→          )}
+   197→   197→        </div>
+   198→   198→      </motion.div>
+   199→   199→    </div>
+   200→   200→  )
+   201→   201→}
+   202→   202→
+   203→   203→// ═══════════════════════════════════════════════════════════════════════
+   204→   204→// ─── PRICING CARD AUTH FORM ──────────────────────────────────────────
+   205→   205→// ═══════════════════════════════════════════════════════════════════════
+   206→   206→
+   207→   207→function CardAuthForm({ mode, onSuccess }: { mode: 'signup' | 'premium'; onSuccess: () => void }) {
+   208→   208→  const { login, signup } = useAetherStore()
+   209→   209→  const [email, setEmail] = useState('')
+   210→   210→  const [password, setPassword] = useState('')
+   211→   211→  const [isLoading, setIsLoading] = useState(false)
+   212→   212→
+   213→   213→  const handleSubmit = async (e: React.FormEvent) => {
+   214→   214→    e.preventDefault()
+   215→   215→    if (!email.trim() || !password.trim()) {
+   216→   216→      toast.error('Please fill in email and password')
+   217→   217→      return
+   218→   218→    }
+   219→   219→    if (password.length < 6) {
+   220→   220→      toast.error('Password must be at least 6 characters')
+   221→   221→      return
+   222→   222→    }
+   223→   223→
+   224→   224→    setIsLoading(true)
+   225→   225→    try {
+   226→   226→      const success = await signup(email.trim(), password, email.trim().split('@')[0])
+   227→   227→      if (success) {
+   228→   228→        toast.success('Welcome to Aether!')
+   229→   229→        onSuccess()
+   230→   230→      } else {
+   231→   231→        toast.error('Signup failed. Email may already be in use.')
+   232→   232→      }
+   233→   233→    } catch {
+   234→   234→      toast.error('Something went wrong. Please try again.')
+   235→   235→    } finally {
+   236→   236→      setIsLoading(false)
+   237→   237→    }
+   238→   238→  }
+   239→   239→
+   240→   240→  return (
+   241→   241→    <form onSubmit={handleSubmit} className="space-y-3 mt-4">
+   242→   242→      <input
+   243→   243→        type="email"
+   244→   244→        placeholder="Email address"
+   245→   245→        value={email}
+   246→   246→        onChange={(e) => setEmail(e.target.value)}
+   247→   247→        disabled={isLoading}
+   248→   248→        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   249→   249→      />
+   250→   250→      <input
+   251→   251→        type="password"
+   252→   252→        placeholder="Password (6+ characters)"
+   253→   253→        value={password}
+   254→   254→        onChange={(e) => setPassword(e.target.value)}
+   255→   255→        disabled={isLoading}
+   256→   256→        className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   257→   257→      />
+   258→   258→      <button
+   259→   259→        type="submit"
+   260→   260→        disabled={isLoading}
+   261→   261→        className={cn(
+   262→   262→          'w-full flex items-center justify-center gap-2 rounded-lg h-10 font-medium text-sm transition-all',
+   263→   263→          mode === 'premium'
+   264→   264→            ? 'bg-gradient-to-r from-purple-600 to-rose-500 hover:from-purple-700 hover:to-rose-600 text-white'
+   265→   265→            : 'bg-gray-900 hover:bg-gray-800 text-white',
+   266→   266→          'disabled:opacity-50 disabled:cursor-not-allowed'
+   267→   267→        )}
+   268→   268→      >
+   269→   269→        {isLoading ? (
+   270→   270→          <Loader2 className="size-4 animate-spin" />
+   271→   271→        ) : mode === 'premium' ? (
+   272→   272→          <>
+   273→   273→            Unlock Premium Sanctuary
+   274→   274→            <ArrowRight className="size-3.5" />
+   275→   275→          </>
+   276→   276→        ) : (
+   277→   277→          'Create Free Account'
+   278→   278→        )}
+   279→   279→      </button>
+   280→   280→    </form>
+   281→   281→  )
+   282→   282→}
+   283→   283→
+   284→   284→// ═══════════════════════════════════════════════════════════════════════
+   285→   285→// ─── SIGN IN DIALOG ──────────────────────────────────────────────────
+   286→   286→// ═══════════════════════════════════════════════════════════════════════
+   287→   287→
+   288→   288→function SignInDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+   289→   289→  const { login } = useAetherStore()
+   290→   290→  const [email, setEmail] = useState('')
+   291→   291→  const [password, setPassword] = useState('')
+   292→   292→  const [isLoading, setIsLoading] = useState(false)
+   293→   293→
+   294→   294→  const handleSubmit = async (e: React.FormEvent) => {
+   295→   295→    e.preventDefault()
+   296→   296→    if (!email.trim() || !password.trim()) {
+   297→   297→      toast.error('Please fill in email and password')
+   298→   298→      return
+   299→   299→    }
+   300→   300→
+   301→   301→    setIsLoading(true)
+   302→   302→    try {
+   303→   303→      const success = await login(email.trim(), password)
+   304→   304→      if (success) {
+   305→   305→        toast.success('Welcome back!')
+   306→   306→        onClose()
+   307→   307→      } else {
+   308→   308→        toast.error('Invalid email or password')
+   309→   309→      }
+   310→   310→    } catch {
+   311→   311→      toast.error('Something went wrong')
+   312→   312→    } finally {
+   313→   313→      setIsLoading(false)
+   314→   314→    }
+   315→   315→  }
+   316→   316→
+   317→   317→  return (
+   318→   318→    <AnimatePresence>
+   319→   319→      {open && (
+   320→   320→        <>
+   321→   321→          <motion.div
+   322→   322→            initial={{ opacity: 0 }}
+   323→   323→            animate={{ opacity: 1 }}
+   324→   324→            exit={{ opacity: 0 }}
+   325→   325→            transition={{ duration: 0.2 }}
+   326→   326→            className="fixed inset-0 z-50 bg-black/10 backdrop-blur-[2px]"
+   327→   327→            onClick={onClose}
+   328→   328→          />
+   329→   329→          <motion.div
+   330→   330→            initial={{ opacity: 0, scale: 0.97, y: -10 }}
+   331→   331→            animate={{ opacity: 1, scale: 1, y: 0 }}
+   332→   332→            exit={{ opacity: 0, scale: 0.97, y: -10 }}
+   333→   333→            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+   334→   334→            className="fixed top-20 right-8 z-50 w-80 bg-white border border-black/[0.04] shadow-[0_16px_48px_rgba(0,0,0,0.08)] rounded-2xl p-6"
+   335→   335→            onClick={(e) => e.stopPropagation()}
+   336→   336→          >
+   337→   337→            <div className="flex items-center justify-between mb-5">
+   338→   338→              <h3 className="text-sm font-semibold text-gray-900">Sign In</h3>
+   339→   339→              <button
+   340→   340→                onClick={onClose}
+   341→   341→                className="size-7 rounded-full flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
+   342→   342→              >
+   343→   343→                <X className="size-3.5" />
+   344→   344→              </button>
+   345→   345→            </div>
+   346→   346→
+   347→   347→            <form onSubmit={handleSubmit} className="space-y-3">
+   348→   348→              <input
+   349→   349→                type="email"
+   350→   350→                placeholder="Email address"
+   351→   351→                value={email}
+   352→   352→                onChange={(e) => setEmail(e.target.value)}
+   353→   353→                disabled={isLoading}
+   354→   354→                autoFocus
+   355→   355→                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   356→   356→              />
+   357→   357→              <input
+   358→   358→                type="password"
+   359→   359→                placeholder="Password"
+   360→   360→                value={password}
+   361→   361→                onChange={(e) => setPassword(e.target.value)}
+   362→   362→                disabled={isLoading}
+   363→   363→                className="w-full border border-black/[0.06] focus:border-purple-400 bg-white rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-colors disabled:opacity-50"
+   364→   364→              />
+   365→   365→              <button
+   366→   366→                type="submit"
+   367→   367→                disabled={isLoading}
+   368→   368→                className="w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg h-10 font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+   369→   369→              >
+   370→   370→                {isLoading ? <Loader2 className="size-4 animate-spin" /> : 'Sign In'}
+   371→   371→              </button>
+   372→   372→            </form>
+   373→   373→          </motion.div>
+   374→   374→        </>
+   375→   375→      )}
+   376→   376→    </AnimatePresence>
+   377→   377→  )
+   378→   378→}
+   379→   379→
+   380→   380→// ═══════════════════════════════════════════════════════════════════════
+   381→   381→// ─── DESKTOP LANDING PAGE ────────────────────────────────────────────
+   382→   382→// ═══════════════════════════════════════════════════════════════════════
+   383→   383→
+   384→   384→export function DesktopLanding() {
+   385→   385→  const [showSignIn, setShowSignIn] = useState(false)
+   386→   386→
+   387→   387→  const handleAuthSuccess = useCallback(() => {
+   388→   388→    // Auth success handled by store; page.tsx will switch to Dashboard
+   389→   389→  }, [])
+   390→   390→
+   391→   391→  return (
+   392→   392→    <div className="min-h-screen bg-[#F9FAFB] flex flex-col relative overflow-hidden">
+   393→   393→      {/* ── Background ambient blobs ────────────────────────────────── */}
+   394→   394→      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+   395→   395→        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-purple-100/40 blur-3xl animate-ambient-drift" />
+   396→   396→        <div className="absolute top-1/3 -right-32 w-80 h-80 rounded-full bg-rose-100/30 blur-3xl animate-ambient-drift-alt" />
+   397→   397→        <div className="absolute -bottom-24 left-1/4 w-72 h-72 rounded-full bg-amber-100/20 blur-3xl animate-ambient-drift" />
+   398→   398→      </div>
+   399→   399→
+   400→   400→      {/* ══════════════════════════════════════════════════════════════ */}
+   401→   401→      {/* ── FLOATING HEADER ────────────────────────────────────────── */}
+   402→   402→      {/* ══════════════════════════════════════════════════════════════ */}
+   403→   403→      <header className="fixed top-0 left-0 right-0 z-40 px-6 py-4">
+   404→   404→        <div className="max-w-6xl mx-auto flex items-center justify-between">
+   405→   405→          <div className="flex items-center gap-2.5">
+   406→   406→            <div className="size-9 rounded-xl bg-zinc-900 flex items-center justify-center shadow-sm">
+   407→   407→              <Brain className="size-5 text-white" />
+   408→   408→            </div>
+   409→   409→            <span className="text-sm font-semibold text-gray-900 tracking-tight">Aether</span>
+   410→   410→          </div>
+   411→   411→
+   412→   412→          <button
+   413→   413→            onClick={() => setShowSignIn(true)}
+   414→   414→            className="text-sm font-medium text-gray-500 hover:text-gray-900 px-4 py-2 rounded-lg hover:bg-white/60 border border-transparent hover:border-black/[0.06] transition-all"
+   415→   415→          >
+   416→   416→            Sign In
+   417→   417→          </button>
+   418→   418→        </div>
+   419→   419→      </header>
+   420→   420→
+   421→   421→      {/* ══════════════════════════════════════════════════════════════ */}
+   422→   422→      {/* ── SECTION 1: THE PURPOSE HERO ────────────────────────────── */}
+   423→   423→      {/* ══════════════════════════════════════════════════════════════ */}
+   424→   424→      <section className="flex-1 flex items-center justify-center pt-24 pb-16 px-6 relative">
+   425→   425→        <motion.div
+   426→   426→          variants={staggerContainer}
+   427→   427→          initial="hidden"
+   428→   428→          animate="visible"
+   429→   429→          className="max-w-2xl mx-auto text-center"
+   430→   430→        >
+   431→   431→          <motion.div variants={staggerChild} className="mb-6">
+   432→   432→            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 border border-purple-100/60">
+   433→   433→              <Sparkles className="size-3 text-purple-500" />
+   434→   434→              <span className="text-[11px] font-medium text-purple-600 tracking-wide">COGNITIVE SANCTUARY</span>
+   435→   435→            </div>
+   436→   436→          </motion.div>
+   437→   437→
+   438→   438→          <motion.h1
+   439→   439→            variants={staggerChild}
+   440→   440→            className="text-4xl sm:text-5xl md:text-[56px] font-semibold text-gray-900 tracking-tight leading-[1.1] mb-6"
+   441→   441→          >
+   442→   442→            A sanctuary for thoughts{' '}
+   443→   443→            <span className="bg-gradient-to-r from-purple-600 to-rose-500 bg-clip-text text-transparent">
+   444→   444→              that move too fast.
+   445→   445→            </span>
+   446→   446→          </motion.h1>
+   447→   447→
+   448→   448→          <motion.p
+   449→   449→            variants={staggerChild}
+   450→   450→            className="text-base sm:text-lg text-gray-500 leading-relaxed max-w-xl mx-auto"
+   451→   451→          >
+   452→   452→            Built for builders, creators, and divergent minds who need an absolute zero-friction mental escape pod.
+   453→   453→          </motion.p>
+   454→   454→
+   455→   455→          <motion.div variants={staggerChild} className="mt-8 flex items-center justify-center gap-4">
+   456→   456→            <button
+   457→   457→              onClick={() => {
+   458→   458→                const el = document.getElementById('pricing')
+   459→   459→                if (el) el.scrollIntoView({ behavior: 'smooth' })
+   460→   460→              }}
+   461→   461→              className="inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl px-6 h-11 font-medium text-sm transition-colors"
+   462→   462→            >
+   463→   463→              Get Started
+   464→   464→              <ArrowRight className="size-4" />
+   465→   465→            </button>
+   466→   466→            <button
+   467→   467→              onClick={() => setShowSignIn(true)}
+   468→   468→              className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 rounded-xl px-6 h-11 font-medium text-sm hover:bg-white/60 border border-black/[0.06] transition-all"
+   469→   469→            >
+   470→   470→              Sign In
+   471→   471→            </button>
+   472→   472→          </motion.div>
+   473→   473→        </motion.div>
+   474→   474→      </section>
+   475→   475→
+   476→   476→      {/* ══════════════════════════════════════════════════════════════ */}
+   477→   477→      {/* ── SECTION 2: THE INTERACTIVE LIVING DEMO ─────────────────── */}
+   478→   478→      {/* ══════════════════════════════════════════════════════════════ */}
+   479→   479→      <section className="py-16 px-6">
+   480→   480→        <motion.div
+   481→   481→          initial="hidden"
+   482→   482→          whileInView="visible"
+   483→   483→          viewport={{ once: true, margin: '-60px' }}
+   484→   484→          variants={staggerContainer}
+   485→   485→          className="max-w-6xl mx-auto"
+   486→   486→        >
+   487→   487→          <motion.div variants={staggerChild} className="text-center mb-10">
+   488→   488→            <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">See it in action</span>
+   489→   489→          </motion.div>
+   490→   490→
+   491→   491→          <InteractiveDemo />
+   492→   492→        </motion.div>
+   493→   493→      </section>
+   494→   494→
+   495→   495→      {/* ══════════════════════════════════════════════════════════════ */}
+   496→   496→      {/* ── SECTION 3: ASYMMETRIC PRICING & AUTH MATRIX ────────────── */}
+   497→   497→      {/* ══════════════════════════════════════════════════════════════ */}
+   498→   498→      <section id="pricing" className="py-20 px-6 pb-32">
+   499→   499→        <motion.div
+   500→   500→          initial="hidden"
+   501→   501→          whileInView="visible"
+   502→   502→          viewport={{ once: true, margin: '-60px' }}
+   503→   503→          variants={staggerContainer}
+   504→   504→          className="max-w-4xl mx-auto"
+   505→   505→        >
+   506→   506→          <motion.div variants={staggerChild} className="text-center mb-12">
+   507→   507→            <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight mb-3">
+   508→   508→              Begin your cognitive journey
+   509→   509→            </h2>
+   510→   510→            <p className="text-sm text-gray-400">No credit card required. Start thinking freely.</p>
+   511→   511→          </motion.div>
+   512→   512→
+   513→   513→          <motion.div variants={staggerChild} className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+   514→   514→            {/* ── LEFT CARD: Ambient Free Tier ──────────────────────── */}
+   515→   515→            <div className="bg-white border border-black/[0.06] rounded-2xl p-8 shadow-sm hover:shadow-md transition-shadow duration-300">
+   516→   516→              <div className="mb-6">
+   517→   517→                <span className="text-[11px] font-medium text-gray-400 tracking-widest uppercase">Ambient</span>
+   518→   518→              </div>
+   519→   519→              <div className="flex items-baseline gap-1 mb-2">
+   520→   520→                <span className="text-4xl font-semibold text-gray-900">$0.00</span>
+   521→   521→                <span className="text-sm text-gray-400">/ Free</span>
+   522→   522→              </div>
+   523→   523→              <p className="text-sm text-gray-500 leading-relaxed mb-5">
+   524→   524→                15 Cognitive Captures per month, standard text and local timeline indexing.
+   525→   525→              </p>
+   526→   526→
+   527→   527→              <ul className="space-y-2.5 mb-2">
+   528→   528→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   529→   529→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   530→   530→                  15 captures / month
+   531→   531→                </li>
+   532→   532→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   533→   533→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   534→   534→                  Text & link capture
+   535→   535→                </li>
+   536→   536→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   537→   537→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   538→   538→                  AI summaries
+   539→   539→                </li>
+   540→   540→                <li className="flex items-center gap-2 text-sm text-gray-600">
+   541→   541→                  <Check className="size-3.5 text-green-500 shrink-0" />
+   542→   542→                  Local timeline indexing
+   543→   543→                </li>
+   544→   544→              </ul>
+   545→   545→
+   546→   546→              <div className="mt-6 pt-5 border-t border-black/[0.04]">
+   547→   547→                <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
+   548→   548→                  Create Free Account
+   549→   549→                </label>
+   550→   550→                <CardAuthForm mode="signup" onSuccess={handleAuthSuccess} />
+   551→   551→              </div>
+   552→   552→            </div>
+   553→   553→
+   554→   554→            {/* ── RIGHT CARD: Ascent Premium Tier ───────────────────── */}
+   555→   555→            <div className="relative bg-white rounded-2xl p-8 shadow-[0_8px_40px_rgba(0,0,0,0.06)]">
+   556→   556→              {/* Animated gradient border - using purple/rose instead of indigo/blue */}
+   557→   557→              <div className="absolute inset-0 rounded-2xl p-[2px] animate-gradient-border bg-[length:200%_200%] bg-gradient-to-r from-purple-500 via-rose-400 to-purple-600">
+   558→   558→                <div className="w-full h-full bg-white rounded-[14px]" />
+   559→   559→              </div>
+   560→   560→
+   561→   561→              <div className="relative z-10">
+   562→   562→                <div className="flex items-center justify-between mb-6">
+   563→   563→                  <span className="text-[11px] font-medium text-purple-500 tracking-widest uppercase">Ascent</span>
+   564→   564→                  <span className="text-[10px] font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100/60">
+   565→   565→                    PREMIUM
+   566→   566→                  </span>
+   567→   567→                </div>
+   568→   568→                <div className="flex items-baseline gap-1 mb-2">
+   569→   569→                  <span className="text-4xl font-semibold text-gray-900">$5.99</span>
+   570→   570→                  <span className="text-sm text-gray-400">/ month</span>
+   571→   571→                </div>
+   572→   572→                <p className="text-sm text-gray-500 leading-relaxed mb-5">
+   573→   573→                  Infinite Cognitive Scale, sub-second Groq voice processing, deep insights, and autonomous 10-memory vector collection auto-clustering.
+   574→   574→                </p>
+   575→   575→
+   576→   576→                <ul className="space-y-2.5 mb-2">
+   577→   577→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   578→   578→                    <Zap className="size-3.5 text-purple-500 shrink-0" />
+   579→   579→                    Unlimited captures
+   580→   580→                  </li>
+   581→   581→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   582→   582→                    <Volume2 className="size-3.5 text-purple-500 shrink-0" />
+   583→   583→                    Sub-second Groq voice processing
+   584→   584→                  </li>
+   585→   585→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   586→   586→                    <Brain className="size-3.5 text-purple-500 shrink-0" />
+   587→   587→                    Deep cognitive insights
+   588→   588→                  </li>
+   589→   589→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   590→   590→                    <Layers className="size-3.5 text-purple-500 shrink-0" />
+   591→   591→                    Auto-clustering collections
+   592→   592→                  </li>
+   593→   593→                  <li className="flex items-center gap-2 text-sm text-gray-600">
+   594→   594→                    <Sparkles className="size-3.5 text-purple-500 shrink-0" />
+   595→   595→                    Priority AI synthesis
+   596→   596→                  </li>
+   597→   597→                </ul>
+   598→   598→
+   599→   599→                <div className="mt-6 pt-5 border-t border-black/[0.04]">
+   600→   600→                  <label className="text-[11px] font-medium text-gray-400 tracking-widest uppercase block mb-3">
+   601→   601→                    Unlock Premium Sanctuary
+   602→   602→                  </label>
+   603→   603→                  <CardAuthForm mode="premium" onSuccess={handleAuthSuccess} />
+   604→   604→                </div>
+   605→   605→              </div>
+   606→   606→            </div>
+   607→   607→          </motion.div>
+   608→   608→        </motion.div>
+   609→   609→      </section>
+   610→   610→
+   611→   611→      {/* ── Footer ────────────────────────────────────────────────── */}
+   612→   612→      <footer className="py-6 text-center border-t border-black/[0.03]">
+   613→   613→        <p className="text-xs text-gray-400">Aether &mdash; Your cognitive sanctuary</p>
+   614→   614→      </footer>
+   615→   615→
+   616→   616→      {/* ── Sign In Dialog ────────────────────────────────────────── */}
+   617→   617→      <SignInDialog open={showSignIn} onClose={() => setShowSignIn(false)} />
+   618→   618→    </div>
+   619→   619→  )
+   620→   620→}
+   621→   621→

@@ -8,7 +8,6 @@ import { AskAether } from '@/components/aether/AskAether'
 import { Collections } from '@/components/aether/Collections'
 import { Settings } from '@/components/aether/Settings'
 import { DesktopLanding } from '@/components/aether/DesktopLanding'
-import { MobileApp } from '@/components/aether/MobileApp'
 import { AuthDrawer } from '@/components/aether/AuthModal'
 
 function ViewRouter() {
@@ -33,7 +32,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB]">
-      {/* ── Desktop: Landing page for unauthenticated, App for authenticated ── */}
+      {/* ── Desktop: Landing for unauthenticated, App for authenticated ── */}
       <div className="hidden md:block">
         {isAuthenticated ? (
           <>
@@ -47,11 +46,13 @@ export default function Home() {
         )}
       </div>
 
-      {/* ── Mobile: App view (hidden on desktop) ──────────────────── */}
+      {/* ── Mobile: Always show the app (no landing page). ── */}
+      {/* ── Auth is gated at the capture bar level instead. ── */}
       <div className="block md:hidden">
-        <MobileApp>
+        <AppShell>
           <ViewRouter />
-        </MobileApp>
+        </AppShell>
+        <AuthDrawer />
       </div>
     </div>
   )
