@@ -256,8 +256,25 @@ export function Settings() {
     }
   }
 
-  const handleClearAllData = () => {
-    toast('All data cleared', { description: 'This is a demo — no data was actually deleted.' })
+  const handleClearAllData = async () => {
+    try {
+      // Delete all memories via API
+      for (const memory of memories) {
+        await fetch(`/api/memories/${memory.id}`, { method: 'DELETE', credentials: 'include' })
+      }
+      // Delete all collections via API
+      for (const collection of collections) {
+        await fetch(`/api/collections/${collection.id}`, { method: 'DELETE', credentials: 'include' })
+      }
+      // Refresh store
+      await useAetherStore.getState().fetchMemories()
+      await useAetherStore.getState().fetchCollections()
+      // Clear chat
+      useAetherStore.getState().clearChat()
+      toast.success('All data cleared', { description: `${memories.length} memories and ${collections.length} collections deleted.` })
+    } catch {
+      toast.error('Failed to clear data', { description: 'Some items may not have been deleted.' })
+    }
   }
 
   const handleUpgrade = () => {

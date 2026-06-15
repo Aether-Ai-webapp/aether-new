@@ -51,10 +51,13 @@ export async function GET() {
             title: m.title,
             content: m.content,
             summary: m.summary,
+            deepInsight: m.deep_insight || null,
             tags: m.tags ? (m.tags as string).split(',').filter(Boolean) : [],
             sourceUrl: m.source_url,
             fileUrl: m.file_url,
             imagePreview: m.image_preview,
+            imageUrl: m.image_url || null,
+            recap: m.recap || null,
             isFavorite: m.is_favorite,
             createdAt: m.created_at,
             updatedAt: m.updated_at,
@@ -171,6 +174,23 @@ export async function POST(req: NextRequest) {
             )
           }
 
+          // Re-fetch memory with collections to return complete data
+          let collectionsForResponse: { id: unknown; name: unknown; color: unknown; icon: unknown }[] = []
+          if (collectionIds?.length) {
+            const { data: collectionRows } = await supabase
+              .from('collections')
+              .select('id, name, color, icon')
+              .in('id', collectionIds)
+            if (collectionRows) {
+              collectionsForResponse = collectionRows.map((c: Record<string, unknown>) => ({
+                id: c.id,
+                name: c.name,
+                color: c.color,
+                icon: c.icon,
+              }))
+            }
+          }
+
           return NextResponse.json(
             {
               id: m.id,
@@ -178,14 +198,17 @@ export async function POST(req: NextRequest) {
               title: m.title,
               content: m.content,
               summary: m.summary,
+              deepInsight: m.deep_insight || null,
               tags: m.tags ? (m.tags as string).split(',').filter(Boolean) : [],
               sourceUrl: m.source_url,
               fileUrl: m.file_url,
               imagePreview: m.image_preview,
+              imageUrl: m.image_url || null,
+              recap: m.recap || null,
               isFavorite: m.is_favorite,
               createdAt: m.created_at,
               updatedAt: m.updated_at,
-              collections: [],
+              collections: collectionsForResponse,
             },
             { status: 201 }
           )

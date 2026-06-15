@@ -682,6 +682,9 @@ export async function POST(req: NextRequest) {
               tags: aiTags.join(','),
               source_url: hasUrl ? url.trim() : null,
               image_url: imageUrl,
+              image_preview: null,
+              file_url: null,
+              recap: null,
               is_favorite: false,
             })
             .select('*, memory_collections(collection_id, collections(id, name, color, icon))')

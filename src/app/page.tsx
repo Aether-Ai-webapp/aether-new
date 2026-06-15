@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAetherStore, type Memory, type MemoryType } from '@/lib/aether-store'
+import { useCapture } from '@/hooks/useCapture'
 import { formatDistanceToNow } from 'date-fns'
+import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 import {
   Sparkles,
   Brain,
@@ -31,9 +34,25 @@ import {
   Tag,
   ExternalLink,
   Hash,
+  Command as CommandIcon,
+  Plus,
+  Globe,
+  Type,
+  Camera,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
+import {
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandShortcut,
+  CommandSeparator,
+} from '@/components/ui/command'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 
 // ═══════════════════════════════════════════════════════════════════════
 // ─── MOBILE DETECTION HOOK ───────────────────────────────────────────
@@ -88,17 +107,17 @@ function LivingDemo() {
 
   return (
     <div className="w-full max-w-xl mx-auto">
-      <div className="bg-white rounded-2xl border border-zinc-100 shadow-lg overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-50">
-          <div className="w-3 h-3 rounded-full bg-red-300" />
-          <div className="w-3 h-3 rounded-full bg-yellow-300" />
-          <div className="w-3 h-3 rounded-full bg-green-300" />
-          <span className="ml-3 text-xs text-zinc-400 font-medium">Aether Capture</span>
+      <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-black/[0.04] shadow-[0_20px_50px_rgba(109,89,122,0.05)] overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-black/[0.04]">
+          <div className="w-3 h-3 rounded-full bg-red-300/70" />
+          <div className="w-3 h-3 rounded-full bg-yellow-300/70" />
+          <div className="w-3 h-3 rounded-full bg-green-300/70" />
+          <span className="ml-3 text-xs text-zinc-400 font-medium tracking-wide">Aether Capture</span>
         </div>
         <div className="p-5">
-          <div className="flex items-center gap-3 bg-zinc-50/80 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-3 bg-[#FAFAFA] rounded-xl px-4 py-3 mb-4">
             <Zap className="w-4 h-4 text-purple-400 shrink-0" />
-            <span className="text-sm text-zinc-700 min-h-[20px]">
+            <span className="text-sm text-zinc-700 min-h-[20px] leading-relaxed">
               {displayedText}
               {phase === 'typing' && <span className="animate-pulse text-purple-500">|</span>}
             </span>
@@ -122,16 +141,16 @@ function LivingDemo() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="bg-white border border-zinc-100 rounded-xl p-4 shadow-sm"
+                className="bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-xl p-4 shadow-[0_8px_30px_rgba(109,89,122,0.04)]"
               >
-                <p className="font-semibold text-sm text-zinc-800 mb-1">PC Build GPU Research</p>
+                <p className="font-semibold text-sm text-zinc-800 mb-1 tracking-tight">PC Build GPU Research</p>
                 <p className="text-xs text-zinc-500 leading-relaxed">
-                  Considering video editing needs under $500, the RTX 4060 Ti offers excellent value with NVENC encoding support and 16GB VRAM options for timeline scrubbing.
+                  Considering video editing needs under $500, the RTX 4060 Ti offers excellent value with NVENC encoding support and 16GB VRAM options.
                 </p>
                 <div className="flex gap-2 mt-3">
-                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">hardware</span>
-                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">video-editing</span>
-                  <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full">budget</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50/80 text-purple-600 border border-purple-100/50 rounded-full font-medium">hardware</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50/80 text-purple-600 border border-purple-100/50 rounded-full font-medium">video-editing</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-purple-50/80 text-purple-600 border border-purple-100/50 rounded-full font-medium">budget</span>
                 </div>
               </motion.div>
             )}
@@ -143,7 +162,7 @@ function LivingDemo() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// ─── MEMORY TYPE ICON HELPER ────────────────────────────────────────
+// ─── MEMORY TYPE HELPERS ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════
 
 function MemoryTypeIcon({ type, className }: { type: MemoryType; className?: string }) {
@@ -161,20 +180,68 @@ function MemoryTypeIcon({ type, className }: { type: MemoryType; className?: str
 
 function MemoryTypeBgClass(type: MemoryType): string {
   switch (type) {
-    case 'voice': return 'bg-red-50 text-red-500'
-    case 'link': return 'bg-blue-50 text-blue-500'
-    case 'image': return 'bg-green-50 text-green-500'
+    case 'voice': return 'bg-rose-50 text-rose-500'
+    case 'link': return 'bg-emerald-50 text-emerald-500'
+    case 'image': return 'bg-amber-50 text-amber-500'
     default: return 'bg-purple-50 text-purple-500'
   }
 }
 
 function MemoryTypeBadgeClass(type: MemoryType): string {
   switch (type) {
-    case 'voice': return 'bg-red-50 text-red-600'
-    case 'link': return 'bg-blue-50 text-blue-600'
-    case 'image': return 'bg-green-50 text-green-600'
-    default: return 'bg-purple-50 text-purple-600'
+    case 'voice': return 'bg-rose-50/80 text-rose-600 border-rose-100/50'
+    case 'link': return 'bg-emerald-50/80 text-emerald-600 border-emerald-100/50'
+    case 'image': return 'bg-amber-50/80 text-amber-600 border-amber-100/50'
+    default: return 'bg-purple-50/80 text-purple-600 border-purple-100/50'
   }
+}
+
+function MemoryTypeDotClass(type: MemoryType): string {
+  switch (type) {
+    case 'voice': return 'bg-rose-400'
+    case 'link': return 'bg-emerald-400'
+    case 'image': return 'bg-amber-400'
+    default: return 'bg-purple-400'
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ─── WEEKLY RECAP HELPER ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+
+function getWeeklyRecap(memories: Memory[]): { count: number; topTags: string[]; summary: string } | null {
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const weekMemories = memories.filter(m => new Date(m.createdAt).getTime() > sevenDaysAgo)
+  if (weekMemories.length === 0) return null
+
+  const tagCounts: Record<string, number> = {}
+  weekMemories.forEach(m => {
+    m.tags.forEach(t => {
+      tagCounts[t] = (tagCounts[t] || 0) + 1
+    })
+  })
+  const topTags = Object.entries(tagCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([tag]) => tag)
+
+  // Check for recap field in most recent memory
+  const latestRecap = weekMemories[0]?.recap
+  if (latestRecap) {
+    return { count: weekMemories.length, topTags, summary: latestRecap.slice(0, 200) }
+  }
+
+  // Generate a simple summary from the week's data
+  const summaries = weekMemories
+    .map(m => m.summary || m.content || m.title)
+    .filter(Boolean)
+    .slice(0, 5)
+  const combinedText = summaries.join('. ')
+  const summaryText = combinedText.length > 150
+    ? combinedText.slice(0, 147) + '...'
+    : combinedText || `You captured ${weekMemories.length} thought${weekMemories.length > 1 ? 's' : ''} this week.`
+
+  return { count: weekMemories.length, topTags, summary: summaryText }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -184,15 +251,14 @@ function MemoryTypeBadgeClass(type: MemoryType): string {
 export default function AetherApp() {
   const store = useAetherStore()
   const isMobile = useIsMobile()
+  const capture = useCapture()
 
   // ── Capture State ────────────────────────────────────────────────
-  const [captureText, setCaptureText] = useState('')
-  const [isCapturing, setIsCapturing] = useState(false)
-  const [isRecording, setIsRecording] = useState(false)
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
+  const [captureInput, setCaptureInput] = useState('')
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [justCapturedId, setJustCapturedId] = useState<string | null>(null)
 
   // ── Auth State ───────────────────────────────────────────────────
   const [authModalOpen, setAuthModalOpen] = useState(false)
@@ -206,10 +272,6 @@ export default function AetherApp() {
   const [premiumEmail, setPremiumEmail] = useState('')
   const [premiumPassword, setPremiumPassword] = useState('')
 
-  // ── Suggestion Box State ─────────────────────────────────────────
-  const [newMemoryIds, setNewMemoryIds] = useState<Set<string>>(new Set())
-  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set())
-
   // ── Ask AI State ─────────────────────────────────────────────────
   const [askAIOpen, setAskAIOpen] = useState(false)
   const [askAIQuery, setAskAIQuery] = useState('')
@@ -217,17 +279,19 @@ export default function AetherApp() {
   const [askAILoading, setAskAILoading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
-  // ── Inspection Drawer State ──────────────────────────────────────
+  // ── Drawer State ─────────────────────────────────────────────────
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerMemory, setDrawerMemory] = useState<Memory | null>(null)
   const [drawerConnections, setDrawerConnections] = useState<{ id: string; title: string; type: string; reason: string; strength: number }[]>([])
   const [drawerConnectionsLoading, setDrawerConnectionsLoading] = useState(false)
-  const [drawerThemes, setDrawerThemes] = useState<string[]>([])
 
   // ── AI Brain State ───────────────────────────────────────────────
   const [brainOpen, setBrainOpen] = useState(false)
   const [brainClusters, setBrainClusters] = useState<{ name: string; theme: string; memoryIds: string[] }[]>([])
   const [brainLoading, setBrainLoading] = useState(false)
+
+  // ── Command Palette State ────────────────────────────────────────
+  const [commandOpen, setCommandOpen] = useState(false)
 
   // ═════════════════════════════════════════════════════════════════
   // ─── EFFECTS ─────────────────────────────────────────────────────
@@ -250,140 +314,93 @@ export default function AetherApp() {
     }
   }, [askAIResponse])
 
+  // Command palette keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setCommandOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Clear just-captured animation after a few seconds
+  useEffect(() => {
+    if (justCapturedId) {
+      const timer = setTimeout(() => setJustCapturedId(null), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [justCapturedId])
+
   // ═════════════════════════════════════════════════════════════════
   // ─── HANDLERS ────────────────────────────────────────────────────
   // ═════════════════════════════════════════════════════════════════
 
   const handleCaptureSubmit = useCallback(async () => {
-    const text = captureText.trim()
-    if (!text && !selectedImage && !isRecording) return
-
-    setIsCapturing(true)
+    const text = captureInput.trim()
+    if (!text && !selectedImage && !capture.isRecording) return
 
     try {
-      // ── IMAGE CAPTURE PATH ────────────────────────────────────────
+      // Image capture
       if (selectedImage) {
-        const formData = new FormData()
-        formData.append('image', selectedImage)
-        if (text) formData.append('text', text)
-
-        const res = await fetch('/api/capture', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-        })
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}))
-          throw new Error(errData.error || 'Capture failed')
+        const result = await capture.captureImage(selectedImage, text || undefined)
+        if (result.success && result.memory) {
+          setJustCapturedId(result.memory.id)
+          toast.success('Image captured & AI analyzed!', { icon: '✨' })
+        } else if (result.error) {
+          toast.error(result.error)
         }
-        const data = await res.json()
-
-        if (data.memory) {
-          store.addMemory(data.memory)
-          setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-          toast.success('Image captured & AI analyzed!')
-        }
-
-        setCaptureText('')
+        setCaptureInput('')
         setSelectedImage(null)
         setImagePreviewUrl(null)
         return
       }
 
-      // ── TEXT / LINK CAPTURE PATH ──────────────────────────────────
+      // Voice capture (stop recording first, then captureVoice is called in handleStopRecording)
+      if (capture.isRecording) {
+        const blob = await capture.stopRecording()
+        if (blob) {
+          const result = await capture.captureVoice(blob, text || undefined)
+          if (result.success && result.memory) {
+            setJustCapturedId(result.memory.id)
+            toast.success('Voice note captured & transcribed!', { icon: '✨' })
+          } else if (result.error) {
+            toast.error(result.error)
+          }
+        }
+        setCaptureInput('')
+        return
+      }
+
+      // Text or Link capture
       const isUrl = /^https?:\/\//i.test(text)
-      const memoryType: MemoryType = isUrl ? 'link' : 'text'
-
-      // Use the capture API for text too, so AI synthesis runs
-      const formData = new FormData()
-      formData.append('text', text)
-      if (isUrl) formData.append('url', text)
-
-      const res = await fetch('/api/capture', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      })
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error || 'Capture failed')
-      }
-      const data = await res.json()
-
-      if (data.memory) {
-        store.addMemory(data.memory)
-        setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-        toast.success(data.memory.summary || data.memory.tags?.length > 0 ? 'Captured with AI synthesis!' : 'Memory captured!')
+      let result
+      if (isUrl) {
+        result = await capture.captureLink(text, undefined, undefined)
+      } else {
+        result = await capture.captureText(text, text)
       }
 
-      setCaptureText('')
+      if (result.success && result.memory) {
+        setJustCapturedId(result.memory.id)
+        toast.success(
+          result.memory.summary || (result.memory.tags && result.memory.tags.length > 0)
+            ? 'Captured with AI synthesis!'
+            : 'Memory captured!',
+          { icon: '✨' }
+        )
+      } else if (result.error) {
+        toast.error(result.error)
+      }
+
+      setCaptureInput('')
     } catch (err) {
       console.error('Capture error:', err)
       toast.error(err instanceof Error ? err.message : 'Failed to capture. Please try again.')
-    } finally {
-      setIsCapturing(false)
     }
-  }, [captureText, selectedImage, isRecording, store])
-
-  const handleStartRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
-      const chunks: BlobPart[] = []
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data)
-      }
-
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' })
-        stream.getTracks().forEach(t => t.stop())
-
-        setIsCapturing(true)
-        try {
-          const formData = new FormData()
-          formData.append('audio', blob, 'recording.webm')
-          formData.append('text', '')
-
-          const res = await fetch('/api/capture', {
-            method: 'POST',
-            body: formData,
-            credentials: 'include',
-          })
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}))
-            throw new Error(errData.error || 'Voice capture failed')
-          }
-          const data = await res.json()
-
-          if (data.memory) {
-            store.addMemory(data.memory)
-            setNewMemoryIds(prev => new Set([...prev, data.memory.id]))
-            toast.success('Voice note captured & transcribed!')
-          }
-        } catch (err) {
-          console.error('Voice capture error:', err)
-          toast.error(err instanceof Error ? err.message : 'Failed to process voice note')
-        } finally {
-          setIsCapturing(false)
-        }
-      }
-
-      recorder.start()
-      setMediaRecorder(recorder)
-      setIsRecording(true)
-    } catch {
-      toast.error('Microphone access denied')
-    }
-  }, [store])
-
-  const handleStopRecording = useCallback(() => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop()
-      setIsRecording(false)
-      setMediaRecorder(null)
-    }
-  }, [mediaRecorder])
+  }, [captureInput, selectedImage, capture])
 
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -392,6 +409,29 @@ export default function AetherApp() {
     const url = URL.createObjectURL(file)
     setImagePreviewUrl(url)
   }, [])
+
+  const handleStartRecording = useCallback(async () => {
+    try {
+      await capture.startRecording()
+    } catch {
+      toast.error('Microphone access denied')
+    }
+  }, [capture])
+
+  const handleStopRecording = useCallback(async () => {
+    const blob = await capture.stopRecording()
+    if (blob) {
+      const text = captureInput.trim()
+      const result = await capture.captureVoice(blob, text || undefined)
+      if (result.success && result.memory) {
+        setJustCapturedId(result.memory.id)
+        toast.success('Voice note captured & transcribed!', { icon: '✨' })
+      } else if (result.error) {
+        toast.error(result.error)
+      }
+      setCaptureInput('')
+    }
+  }, [capture, captureInput])
 
   const handleAuth = useCallback(async (mode: 'login' | 'signup', email: string, password: string, name?: string) => {
     setAuthLoading(true)
@@ -404,6 +444,7 @@ export default function AetherApp() {
       }
       if (success) {
         setAuthModalOpen(false)
+        store.setShowAuthModal(false)
         setAuthEmail('')
         setAuthPassword('')
         setAuthName('')
@@ -417,11 +458,6 @@ export default function AetherApp() {
       setAuthLoading(false)
     }
   }, [store])
-
-  const handleApplySuggestion = useCallback((memoryId: string) => {
-    setAppliedIds(prev => new Set([...prev, memoryId]))
-    toast.success('AI suggestions applied!')
-  }, [])
 
   const handleDeleteMemory = useCallback(async (id: string) => {
     try {
@@ -496,10 +532,8 @@ export default function AetherApp() {
     setDrawerMemory(memory)
     setDrawerOpen(true)
     setDrawerConnections([])
-    setDrawerThemes([])
     setDrawerConnectionsLoading(true)
 
-    // Fetch connected memories from AI Brain
     try {
       const res = await fetch(`/api/brain?memoryId=${memory.id}`, { credentials: 'include' })
       if (res.ok) {
@@ -517,7 +551,6 @@ export default function AetherApp() {
     setDrawerOpen(false)
     setDrawerMemory(null)
     setDrawerConnections([])
-    setDrawerThemes([])
   }, [])
 
   const handleLoadBrain = useCallback(async () => {
@@ -542,18 +575,22 @@ export default function AetherApp() {
 
   const showLanding = !isMobile && !store.isAuthenticated
 
-  const filteredMemories = store.memories.filter(m => {
-    if (store.filterType !== 'all' && m.type !== store.filterType) return false
-    if (store.searchQuery) {
-      const q = store.searchQuery.toLowerCase()
-      return (
-        m.title.toLowerCase().includes(q) ||
-        m.content.toLowerCase().includes(q) ||
-        m.tags.some(t => t.toLowerCase().includes(q))
-      )
-    }
-    return true
-  })
+  const filteredMemories = useMemo(() => {
+    return store.memories.filter(m => {
+      if (store.filterType !== 'all' && m.type !== store.filterType) return false
+      if (store.searchQuery) {
+        const q = store.searchQuery.toLowerCase()
+        return (
+          m.title.toLowerCase().includes(q) ||
+          m.content.toLowerCase().includes(q) ||
+          m.tags.some(t => t.toLowerCase().includes(q))
+        )
+      }
+      return true
+    })
+  }, [store.memories, store.filterType, store.searchQuery])
+
+  const weeklyRecap = useMemo(() => getWeeklyRecap(store.memories), [store.memories])
 
   // ═════════════════════════════════════════════════════════════════
   // ─── RENDER: STATE A — LANDING PAGE ──────────────────────────────
@@ -563,30 +600,40 @@ export default function AetherApp() {
     return (
       <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 z-50 bg-[#FAFAFA]/80 backdrop-blur-md border-b border-zinc-100">
+        <header className="sticky top-0 z-50 bg-[#FAFAFA]/80 backdrop-blur-xl border-b border-black/[0.04]">
           <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center shadow-[0_4px_12px_rgba(139,92,246,0.2)]">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
               <span className="text-lg font-bold text-zinc-900 tracking-tight">Aether</span>
             </div>
-            <button
-              onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"
-            >
-              <LogIn className="w-4 h-4" />
-              Sign In
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCommandOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 bg-white/60 border border-black/[0.04] rounded-lg hover:bg-white/80 transition-all"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden sm:inline text-[10px] px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-400 font-mono">⌘K</kbd>
+              </button>
+              <button
+                onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 bg-white/60 border border-black/[0.04] rounded-lg hover:bg-white/80 transition-all"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* Purpose Hero */}
+        {/* Hero */}
         <section className="flex-1 flex flex-col items-center justify-center px-6 pt-20 pb-16">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.7, ease: 'easeOut' }}
             className="text-center max-w-3xl mx-auto"
           >
             <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-zinc-900 leading-[1.1]">
@@ -614,55 +661,55 @@ export default function AetherApp() {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.3 }}
+            transition={{ duration: 0.7, delay: 0.3, ease: 'easeOut' }}
           >
             <LivingDemo />
           </motion.div>
         </section>
 
-        {/* Asymmetric Pricing & Registration Matrix */}
+        {/* Pricing Cards */}
         <section className="px-6 pb-24">
           <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-6">
             {/* Free Tier Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-              className="bg-white rounded-2xl border border-zinc-100 p-8 flex flex-col"
+              transition={{ duration: 0.5, delay: 0.5, ease: 'easeOut' }}
+              className="bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-2xl shadow-[0_20px_50px_rgba(109,89,122,0.05)] p-8 flex flex-col transition-all duration-500 ease-out hover:shadow-[0_8px_30px_rgba(109,89,122,0.08)] hover:-translate-y-0.5"
             >
               <div className="mb-6">
-                <p className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-2">Ambient</p>
-                <p className="text-4xl font-bold text-zinc-900">$0.00 <span className="text-base font-normal text-zinc-400">/ Free</span></p>
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 mb-2">Ambient</p>
+                <p className="text-4xl font-bold text-zinc-900 tracking-tight">$0.00 <span className="text-base font-normal text-zinc-400">/ Free</span></p>
               </div>
               <ul className="space-y-3 mb-8 flex-1">
-                <li className="flex items-start gap-2 text-sm text-zinc-600">
-                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
+                  <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                   15 Cognitive Captures per month
                 </li>
-                <li className="flex items-start gap-2 text-sm text-zinc-600">
-                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
+                  <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                   Standard text and local timeline indexing
                 </li>
-                <li className="flex items-start gap-2 text-sm text-zinc-600">
-                  <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
+                  <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
                   AI-powered summaries
                 </li>
               </ul>
-              <div className="space-y-3 border-t border-zinc-50 pt-6">
-                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Create Free Account</p>
+              <div className="space-y-3 border-t border-black/[0.04] pt-6">
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Create Free Account</p>
                 <input
                   type="email"
                   placeholder="Email"
                   value={freeEmail}
                   onChange={e => setFreeEmail(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                  className="w-full px-3 py-2 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                 />
                 <input
                   type="password"
                   placeholder="Password"
                   value={freePassword}
                   onChange={e => setFreePassword(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                  className="w-full px-3 py-2 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                 />
                 <button
                   onClick={async () => {
@@ -674,7 +721,7 @@ export default function AetherApp() {
                     else toast.error('Signup failed. Try again.')
                   }}
                   disabled={authLoading}
-                  className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                  className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-all duration-500 ease-out disabled:opacity-50"
                 >
                   {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Get Started Free'}
                 </button>
@@ -685,50 +732,50 @@ export default function AetherApp() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.7 }}
-              className="relative rounded-2xl p-[2px] bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 shadow-xl"
+              transition={{ duration: 0.5, delay: 0.7, ease: 'easeOut' }}
+              className="relative rounded-2xl p-[2px] bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 shadow-[0_20px_50px_rgba(109,89,122,0.1)]"
             >
-              <div className="bg-white rounded-2xl p-8 flex flex-col h-full">
+              <div className="bg-white rounded-2xl p-8 flex flex-col h-full transition-all duration-500 ease-out hover:shadow-[0_8px_30px_rgba(109,89,122,0.08)] hover:-translate-y-0.5">
                 <div className="mb-6">
                   <div className="flex items-center gap-2 mb-2">
-                    <p className="text-sm font-medium text-purple-400 uppercase tracking-wider">Ascent</p>
-                    <span className="text-[10px] px-2 py-0.5 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-600 rounded-full font-medium">Premium</span>
+                    <p className="text-xs font-medium uppercase tracking-wider text-purple-400">Ascent</p>
+                    <span className="text-[10px] px-2 py-0.5 bg-gradient-to-r from-purple-50 to-indigo-50 text-purple-600 rounded-full font-medium border border-purple-100/50">Premium</span>
                   </div>
-                  <p className="text-4xl font-bold text-zinc-900">$5.99 <span className="text-base font-normal text-zinc-400">/ month</span></p>
+                  <p className="text-4xl font-bold text-zinc-900 tracking-tight">$5.99 <span className="text-base font-normal text-zinc-400">/ month</span></p>
                 </div>
                 <ul className="space-y-3 mb-8 flex-1">
-                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
                     <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
                     Infinite Cognitive Scale
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
                     <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
                     Sub-second Groq voice processing
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
                     <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
                     Deep AI insights &amp; synthesis
                   </li>
-                  <li className="flex items-start gap-2 text-sm text-zinc-600">
+                  <li className="flex items-start gap-2 text-sm text-zinc-600 leading-relaxed">
                     <Check className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
-                    Autonomous 10-memory collection auto-clustering
+                    Autonomous collection auto-clustering
                   </li>
                 </ul>
-                <div className="space-y-3 border-t border-zinc-50 pt-6">
-                  <p className="text-xs font-medium text-purple-400 uppercase tracking-wider">Unlock Premium Sanctuary</p>
+                <div className="space-y-3 border-t border-black/[0.04] pt-6">
+                  <p className="text-xs font-medium uppercase tracking-wider text-purple-400">Unlock Premium Sanctuary</p>
                   <input
                     type="email"
                     placeholder="Email"
                     value={premiumEmail}
                     onChange={e => setPremiumEmail(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                    className="w-full px-3 py-2 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                   />
                   <input
                     type="password"
                     placeholder="Password"
                     value={premiumPassword}
                     onChange={e => setPremiumPassword(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
+                    className="w-full px-3 py-2 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                   />
                   <button
                     onClick={async () => {
@@ -740,7 +787,7 @@ export default function AetherApp() {
                       else toast.error('Signup failed. Try again.')
                     }}
                     disabled={authLoading}
-                    className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all disabled:opacity-50"
+                    className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all duration-500 ease-out disabled:opacity-50"
                   >
                     {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Unlock Premium'}
                   </button>
@@ -751,7 +798,7 @@ export default function AetherApp() {
         </section>
 
         {/* Footer */}
-        <footer className="border-t border-zinc-100 py-8 px-6 mt-auto">
+        <footer className="border-t border-black/[0.04] py-8 px-6 mt-auto">
           <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-zinc-400">
             <span>&copy; {new Date().getFullYear()} Aether</span>
             <span>Your second brain, always listening.</span>
@@ -765,18 +812,19 @@ export default function AetherApp() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm"
               onClick={() => setAuthModalOpen(false)}
             >
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4"
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4 border border-black/[0.04]"
                 onClick={e => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-bold text-zinc-900">Sign In</h2>
+                  <h2 className="text-lg font-bold text-zinc-900 tracking-tight">Sign In</h2>
                   <button onClick={() => setAuthModalOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors">
                     <X className="w-5 h-5" />
                   </button>
@@ -787,19 +835,19 @@ export default function AetherApp() {
                     placeholder="Email"
                     value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                    className="w-full px-3 py-2.5 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                   />
                   <input
                     type="password"
                     placeholder="Password"
                     value={authPassword}
                     onChange={e => setAuthPassword(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                    className="w-full px-3 py-2.5 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                   />
                   <button
                     onClick={() => handleAuth('login', authEmail, authPassword)}
                     disabled={authLoading}
-                    className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50"
+                    className="w-full py-2.5 text-sm font-medium text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg transition-all disabled:opacity-50"
                   >
                     {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Sign In'}
                   </button>
@@ -817,63 +865,94 @@ export default function AetherApp() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Command Palette (Landing) */}
+        <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} title="Aether Command Palette" description="Search or type a command...">
+          <CommandInput placeholder="Type a command or search..." />
+          <CommandList>
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup heading="Actions">
+              <CommandItem onSelect={() => { setCommandOpen(false); setAuthMode('signup'); setAuthModalOpen(true) }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Free Account
+              </CommandItem>
+              <CommandItem onSelect={() => { setCommandOpen(false); setAuthMode('login'); setAuthModalOpen(true) }}>
+                <LogIn className="mr-2 h-4 w-4" />
+                Sign In
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </CommandDialog>
       </div>
     )
   }
 
   // ═════════════════════════════════════════════════════════════════
-  // ─── RENDER: STATE B — SANCTUARY DASHBOARD ──────────────────────
+  // ─── RENDER: STATE B — MAIN DASHBOARD ────────────────────────────
   // ═════════════════════════════════════════════════════════════════
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
-      {/* Dashboard Header */}
-      <header className="sticky top-0 z-40 bg-[#FAFAFA]/80 backdrop-blur-md border-b border-zinc-100">
+      {/* ─── HEADER ─── */}
+      <header className="sticky top-0 z-40 bg-[#FAFAFA]/80 backdrop-blur-xl border-b border-black/[0.04]">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center shadow-[0_4px_12px_rgba(139,92,246,0.15)]">
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="text-sm font-bold text-zinc-900 tracking-tight">Aether</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Search / Command Palette button */}
+            <button
+              onClick={() => setCommandOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-zinc-400 bg-white/60 border border-black/[0.04] rounded-lg hover:bg-white/80 transition-all"
+              title="Search (⌘K)"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="hidden sm:inline text-[9px] px-1 py-0.5 bg-zinc-100 rounded text-zinc-400 font-mono ml-1">⌘K</kbd>
+            </button>
+            {/* AI Brain button */}
             <button
               onClick={handleLoadBrain}
               disabled={brainLoading}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+                "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-500 ease-out",
                 brainOpen
-                  ? "bg-amber-50 text-amber-700 border border-amber-200"
-                  : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 border border-transparent"
+                  ? "bg-amber-50/80 text-amber-700 border border-amber-200/50"
+                  : "text-zinc-500 hover:text-zinc-700 hover:bg-white/60 border border-transparent"
               )}
             >
               {brainLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">AI Brain</span>
             </button>
+            {/* Ask AI button */}
             <button
               onClick={() => setAskAIOpen(!askAIOpen)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all",
+                "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all duration-500 ease-out",
                 askAIOpen
-                  ? "bg-purple-50 text-purple-700 border border-purple-200"
-                  : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 border border-transparent"
+                  ? "bg-purple-50/80 text-purple-700 border border-purple-200/50"
+                  : "text-zinc-500 hover:text-zinc-700 hover:bg-white/60 border border-transparent"
               )}
             >
               <MessageCircle className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ask Your Mind</span>
+              <span className="hidden sm:inline">Ask AI</span>
             </button>
-            {store.user && store.user.id !== 'local' && (
+            {/* Auth / Sign out */}
+            {store.user && store.user.id !== 'local' ? (
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:text-zinc-600 transition-colors"
+                title="Sign out"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
-            )}
-            {(!store.user || store.user.id === 'local') && (
+            ) : (
               <button
                 onClick={() => { setAuthMode('login'); setAuthModalOpen(true) }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Sign In</span>
@@ -883,16 +962,17 @@ export default function AetherApp() {
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* ─── MAIN CONTENT ─── */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 pt-6 pb-20">
-        {/* ═══ Capture Capsule Bar ═══ */}
+        {/* ═══ CAPTURE CAPSULE BAR ═══ */}
         <div className="relative mb-8">
-          <div className="absolute -inset-4 bg-gradient-to-r from-purple-500 to-indigo-500 blur-2xl opacity-15 rounded-3xl pointer-events-none" />
-          <div className="relative bg-white rounded-2xl border border-zinc-100 shadow-sm p-3">
+          {/* Aether Glow */}
+          <div className="absolute -inset-4 bg-gradient-to-r from-purple-500/15 to-indigo-500/15 blur-2xl rounded-3xl pointer-events-none" />
+          <div className="relative bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-2xl shadow-[0_20px_50px_rgba(109,89,122,0.05)] p-3">
             {/* Image preview strip */}
             {imagePreviewUrl && (
               <div className="mb-3 flex items-center gap-2">
-                <img src={imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-zinc-100" />
+                <img src={imagePreviewUrl} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-black/[0.04]" />
                 <button
                   onClick={() => { setSelectedImage(null); setImagePreviewUrl(null) }}
                   className="text-zinc-400 hover:text-zinc-600 transition-colors"
@@ -912,71 +992,118 @@ export default function AetherApp() {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-purple-600 hover:bg-purple-50 transition-all"
+                className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-purple-600 hover:bg-purple-50/50 transition-all"
                 title="Attach image"
               >
                 <ImageIcon className="w-4 h-4" />
               </button>
               <button
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                onClick={capture.isRecording ? handleStopRecording : handleStartRecording}
                 className={cn(
-                  "shrink-0 p-2 rounded-lg transition-all",
-                  isRecording
-                    ? "text-red-500 bg-red-50 animate-pulse"
-                    : "text-zinc-400 hover:text-purple-600 hover:bg-purple-50"
+                  "shrink-0 p-2 rounded-lg transition-all duration-500 ease-out",
+                  capture.isRecording
+                    ? "text-rose-500 bg-rose-50/50 animate-pulse"
+                    : "text-zinc-400 hover:text-purple-600 hover:bg-purple-50/50"
                 )}
-                title={isRecording ? "Stop recording" : "Record voice"}
+                title={capture.isRecording ? "Stop recording" : "Record voice"}
               >
-                {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {capture.isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </button>
               <input
                 type="text"
-                value={captureText}
-                onChange={e => setCaptureText(e.target.value)}
+                value={captureInput}
+                onChange={e => setCaptureInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCaptureSubmit() } }}
-                placeholder={isRecording ? "Recording..." : "Capture a thought, paste a link, or type a note..."}
+                placeholder={capture.isRecording ? `Recording ${capture.recordingDuration}s...` : "Capture a thought, paste a link, or type a note..."}
                 className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none placeholder:text-zinc-300 text-zinc-800"
-                disabled={isRecording || isCapturing}
+                disabled={capture.isCapturing}
               />
               <button
                 onClick={handleCaptureSubmit}
-                disabled={isCapturing || (!captureText.trim() && !selectedImage && !isRecording)}
+                disabled={capture.isCapturing || (!captureInput.trim() && !selectedImage && !capture.isRecording)}
                 className={cn(
-                  "shrink-0 p-2 rounded-lg transition-all",
-                  isCapturing
+                  "shrink-0 p-2 rounded-lg transition-all duration-500 ease-out",
+                  capture.isCapturing
                     ? "bg-purple-100 text-purple-400"
-                    : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                    : "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_4px_12px_rgba(139,92,246,0.2)]"
                 )}
               >
-                {isCapturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {capture.isCapturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
             {/* Recording indicator */}
-            {isRecording && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-red-500">
-                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                Recording... tap the mic to stop
+            {capture.isRecording && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-rose-500">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                Recording {capture.recordingDuration}s — tap mic to stop
               </div>
             )}
           </div>
         </div>
 
-        {/* ═══ Ask Your Mind Panel (Voicenotes-style) ═══ */}
+        {/* ═══ WEEKLY RECAP CARD ═══ */}
+        <AnimatePresence>
+          {weeklyRecap && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              className="mb-6"
+            >
+              <div className="bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-2xl shadow-[0_20px_50px_rgba(109,89,122,0.05)] p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base">✨</span>
+                  <h3 className="text-sm font-bold text-zinc-900 tracking-tight">This Week&apos;s Recap</h3>
+                </div>
+                <p className="text-xs text-zinc-500 mb-3 leading-relaxed">
+                  {weeklyRecap.count} memories captured{weeklyRecap.topTags.length > 0 && (
+                    <> · top tags: {weeklyRecap.topTags.join(', ')}</>
+                  )}
+                </p>
+                <p className="text-sm text-zinc-600 leading-relaxed bg-purple-50/30 rounded-xl p-3 border border-purple-100/30 mb-3">
+                  &ldquo;{weeklyRecap.summary}&rdquo;
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { store.setFilterType('all'); store.setSearchQuery('') }}
+                    className="text-xs font-medium text-purple-600 hover:text-purple-700 bg-purple-50/50 hover:bg-purple-50 px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    View All
+                  </button>
+                  <button
+                    onClick={() => { setAskAIOpen(true); setAskAIQuery('What did I focus on this week?') }}
+                    className="text-xs font-medium text-zinc-500 hover:text-zinc-700 bg-white/60 hover:bg-white px-3 py-1.5 rounded-lg border border-black/[0.04] transition-all"
+                  >
+                    Ask About This Week
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ═══ ASK AI PANEL ═══ */}
         <AnimatePresence>
           {askAIOpen && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mb-8 overflow-hidden"
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="mb-6 overflow-hidden"
             >
-              <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Brain className="w-4 h-4 text-purple-500" />
-                  <h3 className="text-sm font-semibold text-zinc-800">Ask Your Mind</h3>
+              <div className="bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-2xl shadow-[0_20px_50px_rgba(109,89,122,0.05)] p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-purple-500" />
+                    <h3 className="text-sm font-bold text-zinc-800 tracking-tight">Ask Your Mind</h3>
+                  </div>
+                  <button onClick={() => setAskAIOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
                 {askAIResponse && (
-                  <div className="mb-4 p-4 bg-zinc-50 rounded-xl text-sm text-zinc-700 leading-relaxed max-h-64 overflow-y-auto whitespace-pre-wrap">
+                  <div className="mb-4 p-4 bg-purple-50/30 rounded-xl border border-purple-100/30 text-sm text-zinc-700 leading-relaxed max-h-64 overflow-y-auto whitespace-pre-wrap">
                     {askAIResponse}
                     <div ref={chatEndRef} />
                   </div>
@@ -994,12 +1121,12 @@ export default function AetherApp() {
                     onChange={e => setAskAIQuery(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAskAI() }}
                     placeholder="What was that thing I mentioned about..."
-                    className="flex-1 px-3 py-2 text-sm bg-zinc-50 border border-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300"
+                    className="flex-1 px-3 py-2 text-sm bg-[#FAFAFA] border border-black/[0.04] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300 transition-all"
                   />
                   <button
                     onClick={handleAskAI}
                     disabled={askAILoading || !askAIQuery.trim()}
-                    className="shrink-0 p-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    className="shrink-0 p-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-[0_4px_12px_rgba(139,92,246,0.2)]"
                   >
                     <Search className="w-4 h-4" />
                   </button>
@@ -1009,22 +1136,23 @@ export default function AetherApp() {
           )}
         </AnimatePresence>
 
-        {/* ═══ AI Brain Panel ═══ */}
+        {/* ═══ AI BRAIN PANEL ═══ */}
         <AnimatePresence>
           {brainOpen && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mb-8 overflow-hidden"
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              className="mb-6 overflow-hidden"
             >
-              <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5">
+              <div className="bg-white/80 backdrop-blur-xl border border-black/[0.04] rounded-2xl shadow-[0_20px_50px_rgba(109,89,122,0.05)] p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Brain className="w-4 h-4 text-amber-500" />
-                    <h3 className="text-sm font-semibold text-zinc-800">AI Brain — Memory Connections</h3>
+                    <h3 className="text-sm font-bold text-zinc-800 tracking-tight">AI Brain — Memory Connections</h3>
                   </div>
-                  <button onClick={() => setBrainOpen(false)} className="text-zinc-400 hover:text-zinc-600">
+                  <button onClick={() => setBrainOpen(false)} className="text-zinc-400 hover:text-zinc-600 transition-colors">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -1043,36 +1171,36 @@ export default function AetherApp() {
                         return clusterMemories.length > 0
                       }).map((cluster, i) => {
                         const clusterMemories = store.memories.filter(m => cluster.memoryIds.includes(m.id))
-                      return (
-                        <div key={i} className="bg-zinc-50/80 rounded-xl border border-zinc-100/60 p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center">
-                              <Zap className="w-3 h-3 text-amber-600" />
+                        return (
+                          <div key={i} className="bg-[#FAFAFA] rounded-xl border border-black/[0.04] p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-6 h-6 rounded-full bg-amber-100/80 flex items-center justify-center">
+                                <Zap className="w-3 h-3 text-amber-600" />
+                              </div>
+                              <h4 className="text-sm font-semibold text-zinc-800 tracking-tight">{cluster.name}</h4>
+                              <span className="text-[10px] text-zinc-400 font-medium">{clusterMemories.length} memories</span>
                             </div>
-                            <h4 className="text-sm font-semibold text-zinc-800">{cluster.name}</h4>
-                            <span className="text-[10px] text-zinc-400">{clusterMemories.length} memories</span>
+                            <p className="text-xs text-zinc-500 mb-3 leading-relaxed">{cluster.theme}</p>
+                            <div className="space-y-1.5">
+                              {clusterMemories.slice(0, 5).map(m => (
+                                <button
+                                  key={m.id}
+                                  onClick={() => { setBrainOpen(false); openDrawer(m) }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 bg-white/80 rounded-lg border border-black/[0.04] hover:border-purple-200/50 hover:bg-purple-50/30 transition-all duration-500 ease-out text-left"
+                                >
+                                  <div className={cn("shrink-0 w-5 h-5 rounded flex items-center justify-center", MemoryTypeBgClass(m.type))}>
+                                    <MemoryTypeIcon type={m.type} className="w-2.5 h-2.5" />
+                                  </div>
+                                  <span className="text-xs font-medium text-zinc-700 truncate">{m.title || 'Untitled'}</span>
+                                  {m.tags.length > 0 && (
+                                    <span className="text-[10px] text-purple-500 ml-auto shrink-0">{m.tags[0]}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                          <p className="text-xs text-zinc-500 mb-3 leading-relaxed">{cluster.theme}</p>
-                          <div className="space-y-1.5">
-                            {clusterMemories.slice(0, 5).map(m => (
-                              <button
-                                key={m.id}
-                                onClick={() => { setBrainOpen(false); openDrawer(m) }}
-                                className="w-full flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-zinc-100 hover:border-purple-200 hover:bg-purple-50/30 transition-all text-left"
-                              >
-                                <div className={cn("shrink-0 w-5 h-5 rounded flex items-center justify-center", MemoryTypeBgClass(m.type))}>
-                                  <MemoryTypeIcon type={m.type} className="w-2.5 h-2.5" />
-                                </div>
-                                <span className="text-xs font-medium text-zinc-700 truncate">{m.title || 'Untitled'}</span>
-                                {m.tags.length > 0 && (
-                                  <span className="text-[10px] text-purple-500 ml-auto shrink-0">{m.tags[0]}</span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })
+                        )
+                      })
                     )}
                   </div>
                 )}
@@ -1081,17 +1209,17 @@ export default function AetherApp() {
           )}
         </AnimatePresence>
 
-        {/* ═══ Filter Bar ═══ */}
-        <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+        {/* ═══ FILTER BAR ═══ */}
+        <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
           {(['all', 'text', 'voice', 'link', 'image'] as const).map(type => (
             <button
               key={type}
               onClick={() => store.setFilterType(type)}
               className={cn(
-                "px-3 py-1 text-xs font-medium rounded-full transition-all shrink-0",
+                "px-3 py-1.5 text-xs font-medium rounded-full transition-all duration-500 ease-out shrink-0",
                 store.filterType === type
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
+                  ? "bg-zinc-900 text-white shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+                  : "bg-white/60 text-zinc-500 hover:bg-white border border-black/[0.04] hover:border-black/[0.08]"
               )}
             >
               {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1)}
@@ -1104,145 +1232,153 @@ export default function AetherApp() {
               type="text"
               value={store.searchQuery}
               onChange={e => store.setSearchQuery(e.target.value)}
-              placeholder="Search memories..."
-              className="pl-8 pr-3 py-1.5 text-xs bg-zinc-50 border border-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300 w-40"
+              placeholder="Filter..."
+              className="pl-8 pr-3 py-1.5 text-xs bg-white/60 border border-black/[0.04] rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 placeholder:text-zinc-300 w-32 sm:w-40 transition-all"
             />
           </div>
         </div>
 
-        {/* ═══ Timeline Feed ═══ */}
+        {/* ═══ MEMORY GRID ═══ */}
         {store.isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
           </div>
         ) : filteredMemories.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-zinc-100 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-zinc-300" />
+          /* ═══ EMPTY STATE ═══ */
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-20"
+          >
+            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-purple-50 to-indigo-50 flex items-center justify-center border border-purple-100/30 shadow-[0_0_40px_rgba(139,92,246,0.08)]">
+              <Sparkles className="w-7 h-7 text-purple-400" />
             </div>
-            <p className="text-sm text-zinc-400 font-medium">No memories yet</p>
-            <p className="text-xs text-zinc-300 mt-1">Capture your first thought above</p>
-          </div>
+            <h3 className="text-lg font-bold text-zinc-900 tracking-tight mb-2">Your mind is a blank canvas</h3>
+            <p className="text-sm text-zinc-400 max-w-xs mx-auto leading-relaxed mb-6">
+              Capture your first thought, link, or voice note and watch Aether bring it to life.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {['Try: I need to research GPU benchmarks', 'Try: https://example.com/article', 'Try: 🎤 Record a quick thought'].map((suggestion, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    if (suggestion.startsWith('Try: 🎤')) {
+                      handleStartRecording()
+                    } else if (suggestion.startsWith('Try: https://')) {
+                      setCaptureInput(suggestion.replace('Try: ', ''))
+                    } else {
+                      setCaptureInput(suggestion.replace('Try: ', ''))
+                    }
+                  }}
+                  className="text-xs px-3 py-1.5 bg-white/60 border border-black/[0.04] rounded-full text-zinc-500 hover:text-purple-600 hover:bg-purple-50/50 hover:border-purple-100/50 transition-all duration-500 ease-out"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </motion.div>
         ) : (
-          <div className="space-y-3">
+          /* Masonry Grid */
+          <div className="columns-1 md:columns-2 lg:columns-3 gap-3 [column-fill:_balance]">
             {filteredMemories.map(memory => {
-              const isNew = newMemoryIds.has(memory.id) && !appliedIds.has(memory.id)
-              const isApplied = appliedIds.has(memory.id)
-
+              const isJustCaptured = justCapturedId === memory.id
               return (
-                <div key={memory.id}>
-                  {/* Memory Card */}
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-xl border border-zinc-100 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+                <motion.div
+                  key={memory.id}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                  className="break-inside-avoid mb-3"
+                >
+                  <div
                     onClick={() => openDrawer(memory)}
+                    className={cn(
+                      "group cursor-pointer rounded-xl bg-white/80 backdrop-blur-xl border border-black/[0.04] shadow-[0_20px_50px_rgba(109,89,122,0.05)] overflow-hidden transition-all duration-500 ease-out hover:shadow-[0_8px_30px_rgba(109,89,122,0.08)] hover:-translate-y-0.5",
+                      isJustCaptured && "ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(52,211,153,0.15)]"
+                    )}
                   >
+                    {/* Image at top */}
+                    {memory.imageUrl && (
+                      <div className="relative">
+                        <img
+                          src={memory.imageUrl}
+                          alt={memory.title || 'Captured image'}
+                          className="w-full h-40 object-cover"
+                        />
+                        <div className="absolute top-2 right-2">
+                          <div className={cn("w-6 h-6 rounded-md flex items-center justify-center", MemoryTypeBgClass(memory.type))}>
+                            <MemoryTypeIcon type={memory.type} className="w-3 h-3" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={cn("shrink-0 w-8 h-8 rounded-lg flex items-center justify-center", MemoryTypeBgClass(memory.type))}>
-                          <MemoryTypeIcon type={memory.type} className="w-4 h-4" />
-                        </div>
+                      {/* Title row */}
+                      <div className="flex items-start gap-2.5 mb-2">
+                        {!memory.imageUrl && (
+                          <div className={cn("shrink-0 w-7 h-7 rounded-lg flex items-center justify-center", MemoryTypeBgClass(memory.type))}>
+                            <MemoryTypeIcon type={memory.type} className="w-3.5 h-3.5" />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-semibold text-zinc-800 truncate">
-                              {memory.title || 'Untitled'}
-                            </h3>
-                            {isApplied && <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" />}
-                          </div>
-                          {memory.summary && (
-                            <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{memory.summary}</p>
-                          )}
-                          {!memory.summary && memory.content && (
-                            <p className="text-xs text-zinc-400 mt-0.5 line-clamp-2">{memory.content}</p>
-                          )}
-                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                            {memory.tags.slice(0, 4).map(tag => (
-                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full font-medium flex items-center gap-0.5">
-                                <Hash className="w-2 h-2" />
-                                {tag}
-                              </span>
-                            ))}
-                            {memory.tags.length > 4 && (
-                              <span className="text-[10px] text-zinc-300">+{memory.tags.length - 4}</span>
-                            )}
-                            <span className="text-[10px] text-zinc-300 ml-auto flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5" />
-                              {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
+                          <h3 className="text-sm font-semibold text-zinc-800 truncate tracking-tight">
+                            {memory.title || 'Untitled'}
+                          </h3>
                         </div>
-                        <Eye className="w-4 h-4 text-zinc-200 group-hover:text-zinc-400 transition-colors shrink-0 mt-1" />
+                        {isJustCaptured && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="shrink-0"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          </motion.div>
+                        )}
+                      </div>
+                      {/* Content preview */}
+                      {(memory.summary || memory.content) && (
+                        <p className="text-xs text-zinc-500 leading-relaxed line-clamp-3 mb-3">
+                          {memory.summary || memory.content}
+                        </p>
+                      )}
+                      {/* Tags and time */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {memory.tags.slice(0, 3).map(tag => (
+                          <span
+                            key={tag}
+                            className="text-[10px] px-1.5 py-0.5 bg-purple-50/80 text-purple-600 border border-purple-100/50 rounded-full font-medium hover:bg-purple-100/80 transition-colors cursor-default"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                        {memory.tags.length > 3 && (
+                          <span className="text-[10px] text-zinc-300 font-medium">+{memory.tags.length - 3}</span>
+                        )}
+                        <span className="text-[10px] text-zinc-300 ml-auto flex items-center gap-1 shrink-0">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatDistanceToNow(new Date(memory.createdAt), { addSuffix: true })}
+                        </span>
                       </div>
                     </div>
-                  </motion.div>
-
-                  {/* ═══ Saner-style AI Suggestion Box ═══ */}
-                  {isNew && (memory.summary || memory.tags.length > 0 || memory.deepInsight) && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="ml-8 mt-1 overflow-hidden"
-                    >
-                      <div className="bg-zinc-50/80 rounded-xl border border-zinc-100/60 p-3">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <Sparkles className="w-3 h-3 text-purple-400" />
-                          <span className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">AI Synthesis</span>
-                        </div>
-                        {memory.title && (
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <FileText className="w-3 h-3 text-zinc-400" />
-                            <p className="text-xs font-medium text-zinc-600">{memory.title}</p>
-                          </div>
-                        )}
-                        {memory.summary && (
-                          <p className="text-[11px] text-zinc-500 leading-relaxed mb-2">{memory.summary}</p>
-                        )}
-                        {memory.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-2">
-                            {memory.tags.map(tag => (
-                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-full flex items-center gap-0.5 font-medium">
-                                <Hash className="w-2 h-2" />
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {memory.deepInsight && (
-                          <div className="flex items-start gap-1.5 mb-2">
-                            <Brain className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-zinc-500 leading-relaxed">{memory.deepInsight.slice(0, 120)}...</p>
-                          </div>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleApplySuggestion(memory.id) }}
-                          className="flex items-center gap-1.5 text-[11px] font-medium text-purple-600 hover:text-purple-700 transition-colors"
-                        >
-                          <Check className="w-3 h-3" />
-                          Apply &amp; Sync
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </div>
+                  </div>
+                </motion.div>
               )
             })}
           </div>
         )}
       </main>
 
-      {/* Dashboard Footer */}
-      <footer className="border-t border-zinc-100 py-4 px-6 mt-auto">
-        <div className="max-w-5xl mx-auto flex items-center justify-between text-[10px] text-zinc-300">
+      {/* ─── FOOTER ─── */}
+      <footer className="border-t border-black/[0.04] py-4 px-6 mt-auto">
+        <div className="max-w-5xl mx-auto flex items-center justify-between text-[10px] text-zinc-400 font-medium">
           <span>&copy; {new Date().getFullYear()} Aether</span>
           <span>{store.memories.length} memories</span>
         </div>
       </footer>
 
       {/* ═══════════════════════════════════════════════════════════════
-          ─── INSPECTION DRAWER (Right-side sliding panel) ──────────────
+          ─── MEMORY DRAWER (Right-side sliding panel) ──────────────────
           ═══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {drawerOpen && drawerMemory && (
@@ -1250,7 +1386,7 @@ export default function AetherApp() {
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.3 }}
+              animate={{ opacity: 0.2 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 bg-black"
               onClick={closeDrawer}
@@ -1261,14 +1397,14 @@ export default function AetherApp() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
+              className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-[#FAFAFA] shadow-2xl overflow-y-auto"
             >
               {/* Drawer Header */}
-              <div className="sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between p-4 border-b border-zinc-100">
-                <h2 className="text-sm font-bold text-zinc-900">Memory Detail</h2>
+              <div className="sticky top-0 bg-[#FAFAFA]/80 backdrop-blur-xl z-10 flex items-center justify-between px-5 py-4 border-b border-black/[0.04]">
+                <h2 className="text-sm font-bold text-zinc-900 tracking-tight">Memory Detail</h2>
                 <button
                   onClick={closeDrawer}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-all"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-white/60 transition-all"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1278,44 +1414,44 @@ export default function AetherApp() {
                 {/* Title & Type Badge */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={cn("px-2 py-0.5 text-[10px] font-medium rounded-full", MemoryTypeBadgeClass(drawerMemory.type))}>
+                    <span className={cn("px-2 py-0.5 text-[10px] font-medium rounded-full border", MemoryTypeBadgeClass(drawerMemory.type))}>
                       {drawerMemory.type}
                     </span>
-                    <span className="text-[10px] text-zinc-300">
+                    <span className="text-[10px] text-zinc-300 font-medium">
                       {formatDistanceToNow(new Date(drawerMemory.createdAt), { addSuffix: true })}
                     </span>
                   </div>
-                  <h3 className="text-lg font-bold text-zinc-900">
+                  <h3 className="text-lg font-bold text-zinc-900 tracking-tight">
                     {drawerMemory.title || 'Untitled'}
                   </h3>
                 </div>
 
-                {/* AI 2-Sentence Summary */}
+                {/* AI Summary Card */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    <span className="text-xs font-semibold text-zinc-500">AI Summary</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">AI Summary</span>
                   </div>
-                  <p className="text-sm text-zinc-700 leading-relaxed bg-purple-50/50 rounded-xl p-4 border border-purple-100/50">
+                  <p className="text-sm text-zinc-700 leading-relaxed bg-purple-50/30 rounded-xl p-4 border border-purple-100/30">
                     {drawerMemory.summary || 'Summary not yet generated...'}
                   </p>
                 </div>
 
-                {/* Raw Content / Code Block */}
+                {/* Content Section */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <FileText className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="text-xs font-semibold text-zinc-500">Raw Content</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Content</span>
                   </div>
                   {drawerMemory.imageUrl ? (
                     <div className="space-y-3">
                       <img
                         src={drawerMemory.imageUrl}
                         alt="Captured image"
-                        className="w-full rounded-xl border border-zinc-100"
+                        className="w-full rounded-xl border border-black/[0.04]"
                       />
                       {drawerMemory.content && drawerMemory.content !== 'Image capture' && (
-                        <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                        <div className="text-sm text-zinc-600 bg-white/80 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto border border-black/[0.04]">
                           {drawerMemory.content}
                         </div>
                       )}
@@ -1332,38 +1468,40 @@ export default function AetherApp() {
                         {drawerMemory.sourceUrl}
                       </a>
                       {drawerMemory.content && (
-                        <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                        <div className="text-sm text-zinc-600 bg-white/80 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto border border-black/[0.04]">
                           {drawerMemory.content}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="text-sm text-zinc-600 bg-zinc-50 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                    <div className="text-sm text-zinc-600 bg-white/80 rounded-xl p-4 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto border border-black/[0.04]">
                       {drawerMemory.content || 'No content'}
                     </div>
                   )}
                 </div>
 
-                {/* AI Deep Professional Insight */}
+                {/* ═══ AI GLOW CARD — Deep Insight ═══ */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Brain className="w-3.5 h-3.5 text-indigo-400" />
-                    <span className="text-xs font-semibold text-zinc-500">Deep Insight</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Deep Insight</span>
                   </div>
-                  <p className="text-sm text-zinc-700 leading-relaxed bg-indigo-50/50 rounded-xl p-4 border border-indigo-100/50">
-                    {drawerMemory.deepInsight || 'Deep insight not yet generated...'}
-                  </p>
+                  <div className="bg-gradient-to-br from-purple-50/80 via-indigo-50/60 to-blue-50/80 border border-purple-200/30 shadow-[0_0_40px_rgba(139,92,246,0.08)] rounded-xl p-4">
+                    <p className="text-sm text-zinc-700 leading-relaxed">
+                      {drawerMemory.deepInsight || 'Deep insight not yet generated...'}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Tags */}
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Tag className="w-3.5 h-3.5 text-zinc-400" />
-                    <span className="text-xs font-semibold text-zinc-500">Tags</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Tags</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {drawerMemory.tags.length > 0 ? drawerMemory.tags.map(tag => (
-                      <span key={tag} className="text-xs px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-full flex items-center gap-0.5">
+                      <span key={tag} className="text-xs px-2.5 py-1 bg-purple-50/80 text-purple-600 border border-purple-100/50 rounded-full flex items-center gap-0.5 hover:bg-purple-100/80 transition-colors cursor-default">
                         <Hash className="w-2.5 h-2.5" />
                         {tag}
                       </span>
@@ -1376,12 +1514,12 @@ export default function AetherApp() {
                 {/* Collections */}
                 {drawerMemory.collections.length > 0 && (
                   <div>
-                    <span className="text-xs font-semibold text-zinc-500 mb-2 block">Collections</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400 mb-2 block">Collections</span>
                     <div className="flex flex-wrap gap-1.5">
                       {drawerMemory.collections.map(col => (
                         <span
                           key={col.id}
-                          className="text-xs px-2.5 py-1 rounded-full border border-zinc-100"
+                          className="text-xs px-2.5 py-1 rounded-full border border-black/[0.04]"
                           style={{ backgroundColor: `${col.color}15`, color: col.color, borderColor: `${col.color}30` }}
                         >
                           {col.icon} {col.name}
@@ -1395,7 +1533,7 @@ export default function AetherApp() {
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Brain className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="text-xs font-semibold text-zinc-500">Connected Memories</span>
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-400">Connected Memories</span>
                   </div>
                   {drawerConnectionsLoading ? (
                     <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
@@ -1410,7 +1548,7 @@ export default function AetherApp() {
                           <button
                             key={conn.id}
                             onClick={() => { if (connMem) openDrawer(connMem) }}
-                            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-amber-50/50 rounded-xl border border-amber-100/50 hover:border-amber-200 hover:bg-amber-50 transition-all text-left group"
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 bg-amber-50/30 rounded-xl border border-amber-100/30 hover:border-amber-200/50 hover:bg-amber-50/50 transition-all duration-500 ease-out text-left group"
                           >
                             <div className={cn("shrink-0 w-6 h-6 rounded-lg flex items-center justify-center", MemoryTypeBgClass(conn.type as MemoryType))}>
                               <MemoryTypeIcon type={conn.type as MemoryType} className="w-3 h-3" />
@@ -1432,20 +1570,20 @@ export default function AetherApp() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-3 pt-4 border-t border-zinc-100">
+                <div className="flex items-center gap-3 pt-4 border-t border-black/[0.04]">
                   <button
                     onClick={() => handleDownloadMarkdown(drawerMemory)}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-purple-600 bg-purple-50/50 hover:bg-purple-50 rounded-lg border border-purple-100/50 transition-all duration-500 ease-out"
                   >
                     <Download className="w-3.5 h-3.5" />
                     Download .md
                   </button>
                   <button
                     onClick={() => handleDeleteMemory(drawerMemory!.id)}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-red-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all duration-500 ease-out"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Purge Memory
+                    Delete
                   </button>
                 </div>
               </div>
@@ -1455,7 +1593,7 @@ export default function AetherApp() {
       </AnimatePresence>
 
       {/* ═══════════════════════════════════════════════════════════════
-          ─── AUTH MODAL (Mobile / Dashboard) ───────────────────────────
+          ─── AUTH MODAL (Dashboard) ────────────────────────────────────
           ═══════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
         {(authModalOpen || store.showAuthModal) && (
@@ -1463,14 +1601,15 @@ export default function AetherApp() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm"
             onClick={() => { setAuthModalOpen(false); store.setShowAuthModal(false) }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4"
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 border border-black/[0.04]"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-5">
@@ -1478,7 +1617,7 @@ export default function AetherApp() {
                   <button
                     onClick={() => setAuthMode('login')}
                     className={cn(
-                      "text-sm font-semibold pb-1 transition-colors",
+                      "text-sm font-semibold pb-1 transition-colors tracking-tight",
                       authMode === 'login' ? "text-zinc-900 border-b-2 border-purple-500" : "text-zinc-400"
                     )}
                   >
@@ -1487,7 +1626,7 @@ export default function AetherApp() {
                   <button
                     onClick={() => setAuthMode('signup')}
                     className={cn(
-                      "text-sm font-semibold pb-1 transition-colors",
+                      "text-sm font-semibold pb-1 transition-colors tracking-tight",
                       authMode === 'signup' ? "text-zinc-900 border-b-2 border-purple-500" : "text-zinc-400"
                     )}
                   >
@@ -1509,7 +1648,7 @@ export default function AetherApp() {
                     placeholder="Name"
                     value={authName}
                     onChange={e => setAuthName(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                    className="w-full px-3 py-2.5 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                   />
                 )}
                 <input
@@ -1517,7 +1656,7 @@ export default function AetherApp() {
                   placeholder="Email"
                   value={authEmail}
                   onChange={e => setAuthEmail(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                  className="w-full px-3 py-2.5 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                 />
                 <input
                   type="password"
@@ -1529,12 +1668,12 @@ export default function AetherApp() {
                       handleAuth(authMode, authEmail, authPassword, authName)
                     }
                   }}
-                  className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300"
+                  className="w-full px-3 py-2.5 text-sm border border-black/[0.06] rounded-lg bg-white/60 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-300 transition-all"
                 />
                 <button
                   onClick={() => handleAuth(authMode, authEmail, authPassword, authName)}
                   disabled={authLoading}
-                  className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all disabled:opacity-50"
+                  className="w-full py-2.5 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 rounded-lg transition-all duration-500 ease-out disabled:opacity-50"
                 >
                   {authLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : authMode === 'login' ? 'Sign In' : 'Create Account'}
                 </button>
@@ -1543,6 +1682,62 @@ export default function AetherApp() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ═══════════════════════════════════════════════════════════════
+          ─── COMMAND PALETTE (CMDK) ────────────────────────────────────
+          ═══════════════════════════════════════════════════════════════ */}
+      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} title="Aether Command Palette" description="Search memories or type a command...">
+        <CommandInput placeholder="Type a command or search memories..." />
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          {/* Actions */}
+          <CommandGroup heading="Actions">
+            <CommandItem onSelect={() => { setCommandOpen(false); setCaptureInput(''); document.querySelector<HTMLInputElement>('[placeholder*="Capture"]')?.focus() }}>
+              <Type className="mr-2 h-4 w-4" />
+              Capture new text
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); setCaptureInput('https://') }}>
+              <Globe className="mr-2 h-4 w-4" />
+              Capture new link
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); fileInputRef.current?.click() }}>
+              <Camera className="mr-2 h-4 w-4" />
+              Capture new image
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); handleLoadBrain() }}>
+              <Brain className="mr-2 h-4 w-4" />
+              Open AI Brain
+            </CommandItem>
+            <CommandItem onSelect={() => { setCommandOpen(false); setAskAIOpen(true) }}>
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Ask AI
+            </CommandItem>
+          </CommandGroup>
+          {/* Memories by type */}
+          {filteredMemories.length > 0 && (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Memories">
+                {filteredMemories.slice(0, 10).map(memory => (
+                  <CommandItem
+                    key={memory.id}
+                    value={`${memory.title} ${memory.content} ${memory.tags.join(' ')}`}
+                    onSelect={() => { setCommandOpen(false); openDrawer(memory) }}
+                  >
+                    <div className={cn("mr-2 w-4 h-4 rounded flex items-center justify-center", MemoryTypeBgClass(memory.type))}>
+                      <MemoryTypeIcon type={memory.type} className="w-2.5 h-2.5" />
+                    </div>
+                    <span className="truncate">{memory.title || 'Untitled'}</span>
+                    {memory.tags.length > 0 && (
+                      <CommandShortcut>#{memory.tags[0]}</CommandShortcut>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
+          )}
+        </CommandList>
+      </CommandDialog>
     </div>
   )
 }
